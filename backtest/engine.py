@@ -84,18 +84,14 @@ def run_backtest(
         long_positions[date] = longs
         short_positions[date] = shorts
 
-        # 翌日のリターンを使ってポートフォリオリターンを計算
-        # 論文: "positions are opened at the end of day t ... closed at the end of day t+1"
-        date_idx = returns_df.index.get_loc(date)
-        if date_idx + 1 >= len(returns_df):
-            continue
-        next_date = returns_df.index[date_idx + 1]
-
+        # 当日のリターンを使ってポートフォリオリターンを計算
+        # モデルは前日までの特徴量で当日のリターンを予測するため、
+        # 予測対象である当日のリターンを使用する
         # ロング側の平均リターン
         long_returns = []
         for coin in longs:
             if coin in returns_df.columns:
-                r = returns_df.loc[next_date, coin]
+                r = returns_df.loc[date, coin]
                 if not np.isnan(r):
                     long_returns.append(r)
 
@@ -103,7 +99,7 @@ def run_backtest(
         short_returns = []
         for coin in shorts:
             if coin in returns_df.columns:
-                r = returns_df.loc[next_date, coin]
+                r = returns_df.loc[date, coin]
                 if not np.isnan(r):
                     short_returns.append(r)
 
@@ -121,10 +117,10 @@ def run_backtest(
         port_return -= turnover_cost
 
         portfolio_returns.append(port_return)
-        portfolio_dates.append(next_date)
+        portfolio_dates.append(date)
 
         # 精度: ロング銘柄が中央値以上、ショート銘柄が中央値以下かを確認
-        all_returns_today = returns_df.loc[next_date].dropna()
+        all_returns_today = returns_df.loc[date].dropna()
         if len(all_returns_today) > 0:
             median_return = all_returns_today.median()
             correct = 0
