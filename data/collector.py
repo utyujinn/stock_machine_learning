@@ -20,27 +20,31 @@ from config import DATA_DIR, STUDY_PERIODS
 # ステーブルコイン・問題銘柄は除外済み
 # yfinance では "{SYMBOL}-USD" 形式
 CRYPTO_TICKERS = [
+    # --- 大型 (Top 20) ---
     "BTC-USD", "ETH-USD", "BNB-USD", "XRP-USD", "ADA-USD",
     "SOL-USD", "DOGE-USD", "DOT-USD", "AVAX-USD", "SHIB-USD",
-    "MATIC-USD", "LTC-USD", "UNI-USD", "LINK-USD", "ATOM-USD",
-    "XLM-USD", "ETC-USD", "BCH-USD", "ALGO-USD", "VET-USD",
-    "ICP-USD", "FIL-USD", "TRX-USD", "MANA-USD", "SAND-USD",
-    "AXS-USD", "THETA-USD", "XTZ-USD", "AAVE-USD", "EOS-USD",
-    "MKR-USD", "KCS-USD", "ZEC-USD", "NEO-USD", "DASH-USD",
-    "WAVES-USD", "BAT-USD", "ENJ-USD", "CHZ-USD", "COMP-USD",
-    "HOT-USD", "XEM-USD", "IOTA-USD", "SNX-USD", "YFI-USD",
-    "SUSHI-USD", "ZIL-USD", "BTT-USD", "ONE-USD", "CELO-USD",
-    "GRT-USD", "CRV-USD", "QTUM-USD", "OMG-USD", "ICX-USD",
-    "RVN-USD", "ANKR-USD", "ONT-USD", "IOST-USD", "ZRX-USD",
-    "KSM-USD", "NANO-USD", "BNT-USD", "LSK-USD", "DGB-USD",
-    "SC-USD", "STORJ-USD", "SKL-USD", "CELR-USD", "CKB-USD",
-    "SRM-USD", "DENT-USD", "FTM-USD", "KAVA-USD", "1INCH-USD",
-    "NEAR-USD", "EGLD-USD", "RUNE-USD", "HNT-USD", "FLOW-USD",
-    "AR-USD", "HBAR-USD", "XDC-USD", "LUNA-USD", "FTT-USD",
-    "NEXO-USD", "LRC-USD", "KNC-USD", "COTI-USD", "REN-USD",
-    "NKN-USD", "BAND-USD", "OGN-USD", "STMX-USD", "MTL-USD",
-    "GALA-USD", "IMX-USD", "LDO-USD", "APE-USD", "OP-USD",
-    "CRO-USD", "LEO-USD", "OKB-USD", "QNT-USD", "MINA-USD",
+    "TRX-USD", "LINK-USD", "LTC-USD", "BCH-USD", "UNI-USD",
+    "NEAR-USD", "ATOM-USD", "XLM-USD", "ETC-USD", "HBAR-USD",
+    # --- 中型 (21-60) ---
+    "ICP-USD", "FIL-USD", "VET-USD", "ALGO-USD", "AAVE-USD",
+    "MKR-USD", "GRT-USD", "SAND-USD", "MANA-USD", "AXS-USD",
+    "THETA-USD", "XTZ-USD", "EOS-USD", "CHZ-USD", "COMP-USD",
+    "SNX-USD", "CRV-USD", "ENJ-USD", "BAT-USD", "ZEC-USD",
+    "DASH-USD", "NEO-USD", "1INCH-USD", "KAVA-USD", "CELO-USD",
+    "ZIL-USD", "ONE-USD", "ANKR-USD", "ZRX-USD", "KSM-USD",
+    "LRC-USD", "SKL-USD", "STORJ-USD", "GALA-USD", "IMX-USD",
+    "LDO-USD", "OP-USD", "QNT-USD", "FTM-USD", "FLOW-USD",
+    # --- 2023-2026年の主要新規銘柄 ---
+    "SUI-USD", "APT-USD", "ARB-USD", "SEI-USD", "TIA-USD",
+    "INJ-USD", "STX-USD", "RENDER-USD", "FET-USD", "PEPE-USD",
+    "FLOKI-USD", "WIF-USD", "BONK-USD", "JUP-USD", "PYTH-USD",
+    "WLD-USD", "ONDO-USD", "TAO-USD", "KAS-USD", "PENDLE-USD",
+    # --- その他中型 ---
+    "AR-USD", "EGLD-USD", "RUNE-USD", "CRO-USD", "LEO-USD",
+    "OKB-USD", "MINA-USD", "APE-USD", "NEXO-USD", "SC-USD",
+    "DGB-USD", "COTI-USD", "KNC-USD", "BAND-USD", "RVN-USD",
+    "ICX-USD", "ONT-USD", "XDC-USD", "HOT-USD", "YFI-USD",
+    "SUSHI-USD", "BNT-USD", "DENT-USD", "CKB-USD", "NKN-USD",
 ]
 
 
