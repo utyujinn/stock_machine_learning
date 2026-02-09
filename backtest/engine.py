@@ -156,10 +156,13 @@ def run_backtest(
     )
 
 
-def calculate_metrics(daily_returns: pd.Series) -> PerformanceMetrics:
+def calculate_metrics(daily_returns: pd.Series, periods_per_year: int = 365) -> PerformanceMetrics:
     """パフォーマンス評価指標を計算.
 
     論文 Table 6 に対応する指標を計算。
+    Args:
+        daily_returns: 期間リターンのSeries
+        periods_per_year: 年率化係数 (日足=365, 4h足=2190)
     """
     r = daily_returns.values
     n = len(r)
@@ -185,10 +188,10 @@ def calculate_metrics(daily_returns: pd.Series) -> PerformanceMetrics:
     cvar_1 = np.mean(r[r <= var_1]) if np.any(r <= var_1) else var_1
     cvar_5 = np.mean(r[r <= var_5]) if np.any(r <= var_5) else var_5
 
-    # 年率化 (暗号資産は365日取引)
-    ann_vol = std_ret * np.sqrt(365)
-    sharpe = (mean_ret / std_ret) * np.sqrt(365) if std_ret > 0 else 0.0
-    sortino = (mean_ret / downside_std) * np.sqrt(365) if downside_std > 0 else 0.0
+    # 年率化
+    ann_vol = std_ret * np.sqrt(periods_per_year)
+    sharpe = (mean_ret / std_ret) * np.sqrt(periods_per_year) if std_ret > 0 else 0.0
+    sortino = (mean_ret / downside_std) * np.sqrt(periods_per_year) if downside_std > 0 else 0.0
 
     # 最大ドローダウン
     cum_returns = (1 + daily_returns).cumprod()

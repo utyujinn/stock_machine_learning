@@ -63,3 +63,8 @@ DROPOUT_RATE = 0.1
 # --- ポートフォリオ ---
 PORTFOLIO_K = 5
 TRANSACTION_COST_BPS = 15  # 片道 (half-turn) basis points
+
+# --- 4時間足実験 ---
+CANDLE_INTERVAL = "4h"
+PERIODS_PER_YEAR_DAILY = 365          # 日足: 暗号資産は365日取引
+PERIODS_PER_YEAR_4H = 365 * 6        # 4h足: 1日6本 × 365日 = 2190
