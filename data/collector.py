@@ -1,145 +1,60 @@
-"""CoinGecko API からの暗号資産ヒストリカルデータ収集.
+"""暗号資産ヒストリカルデータ収集 (yfinance).
 
 論文の方法論:
 - 時価総額上位100銘柄 (各Study Period の訓練開始日基準)
 - ステーブルコイン・問題銘柄を除外
-- 日次終値 (UTC 00:00) を取得
+- 日次終値を取得
+
+yfinance を使用し一括ダウンロードで高速取得する。
 """
 
-import json
 import os
-import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
-import requests
+import yfinance as yf
 
-from config import (
-    API_MAX_RETRIES,
-    API_RATE_LIMIT_SLEEP,
-    API_RETRY_BACKOFF,
-    COINGECKO_BASE_URL,
-    DATA_DIR,
-    EXCLUDED_COINS,
-    STUDY_PERIODS,
-    TOP_K_COINS,
-)
+from config import DATA_DIR, STUDY_PERIODS
 
-
-def _api_get(url: str, params: dict) -> requests.Response:
-    """429リトライ付きGETリクエスト."""
-    for attempt in range(API_MAX_RETRIES):
-        resp = requests.get(url, params=params, timeout=30)
-        if resp.status_code == 429:
-            wait = API_RETRY_BACKOFF * (attempt + 1)
-            print(f"    429 Rate Limited. {wait}秒待機中... (試行 {attempt+1}/{API_MAX_RETRIES})")
-            time.sleep(wait)
-            continue
-        resp.raise_for_status()
-        return resp
-    resp.raise_for_status()
-    return resp
+# 論文の対象に近い時価総額上位の暗号資産 (yfinance ティッカー)
+# ステーブルコイン・問題銘柄は除外済み
+# yfinance では "{SYMBOL}-USD" 形式
+CRYPTO_TICKERS = [
+    "BTC-USD", "ETH-USD", "BNB-USD", "XRP-USD", "ADA-USD",
+    "SOL-USD", "DOGE-USD", "DOT-USD", "AVAX-USD", "SHIB-USD",
+    "MATIC-USD", "LTC-USD", "UNI-USD", "LINK-USD", "ATOM-USD",
+    "XLM-USD", "ETC-USD", "BCH-USD", "ALGO-USD", "VET-USD",
+    "ICP-USD", "FIL-USD", "TRX-USD", "MANA-USD", "SAND-USD",
+    "AXS-USD", "THETA-USD", "XTZ-USD", "AAVE-USD", "EOS-USD",
+    "MKR-USD", "KCS-USD", "ZEC-USD", "NEO-USD", "DASH-USD",
+    "WAVES-USD", "BAT-USD", "ENJ-USD", "CHZ-USD", "COMP-USD",
+    "HOT-USD", "XEM-USD", "IOTA-USD", "SNX-USD", "YFI-USD",
+    "SUSHI-USD", "ZIL-USD", "BTT-USD", "ONE-USD", "CELO-USD",
+    "GRT-USD", "CRV-USD", "QTUM-USD", "OMG-USD", "ICX-USD",
+    "RVN-USD", "ANKR-USD", "ONT-USD", "IOST-USD", "ZRX-USD",
+    "KSM-USD", "NANO-USD", "BNT-USD", "LSK-USD", "DGB-USD",
+    "SC-USD", "STORJ-USD", "SKL-USD", "CELR-USD", "CKB-USD",
+    "SRM-USD", "DENT-USD", "FTM-USD", "KAVA-USD", "1INCH-USD",
+    "NEAR-USD", "EGLD-USD", "RUNE-USD", "HNT-USD", "FLOW-USD",
+    "AR-USD", "HBAR-USD", "XDC-USD", "LUNA-USD", "FTT-USD",
+    "NEXO-USD", "LRC-USD", "KNC-USD", "COTI-USD", "REN-USD",
+    "NKN-USD", "BAND-USD", "OGN-USD", "STMX-USD", "MTL-USD",
+    "GALA-USD", "IMX-USD", "LDO-USD", "APE-USD", "OP-USD",
+    "CRO-USD", "LEO-USD", "OKB-USD", "QNT-USD", "MINA-USD",
+]
 
 
 def _ensure_cache_dir():
     os.makedirs(DATA_DIR, exist_ok=True)
 
 
-def _unix_ms(date_str: str) -> int:
-    """'YYYY-MM-DD' → UNIX timestamp (秒)."""
-    return int(datetime.strptime(date_str, "%Y-%m-%d").timestamp())
-
-
-def fetch_top_coins_by_market_cap(date_str: str | None = None) -> list[str]:
-    """CoinGecko から時価総額上位銘柄の ID リストを取得.
-
-    CoinGecko の無料 API は過去時点の時価総額ランキングをサポートしないため、
-    キャッシュ済みスナップショットを利用するか、現在のランキングを取得する。
-    """
-    cache_path = os.path.join(DATA_DIR, "top_coins.json")
-    if os.path.exists(cache_path):
-        with open(cache_path) as f:
-            return json.load(f)
-
-    _ensure_cache_dir()
-    all_coins = []
-    # CoinGecko は 1ページ250件まで。除外銘柄を考慮し余裕を持って取得
-    for page in range(1, 4):  # 750件 (Top100 + 除外分に十分)
-        resp = _api_get(
-            f"{COINGECKO_BASE_URL}/coins/markets",
-            params={
-                "vs_currency": "usd",
-                "order": "market_cap_desc",
-                "per_page": 250,
-                "page": page,
-                "sparkline": "false",
-            },
-        )
-        data = resp.json()
-        if not data:
-            break
-        all_coins.extend(data)
-        print(f"  時価総額ランキング取得: page {page}, 累計 {len(all_coins)} 件")
-        time.sleep(API_RATE_LIMIT_SLEEP)
-
-    # 除外銘柄をフィルタし、上位100を取得
-    filtered = [
-        c["id"] for c in all_coins
-        if c["id"] not in EXCLUDED_COINS
-    ][:TOP_K_COINS]
-
-    with open(cache_path, "w") as f:
-        json.dump(filtered, f, indent=2)
-
-    print(f"  Top {len(filtered)} 銘柄を選定・キャッシュ完了")
-    return filtered
-
-
-def fetch_coin_price_history(coin_id: str, start_date: str, end_date: str) -> pd.Series:
-    """特定コインの日次終値を取得.
-
-    Returns:
-        pd.Series: index=日付(datetime), values=USD終値
-    """
-    cache_path = os.path.join(DATA_DIR, f"prices_{coin_id}.csv")
-    if os.path.exists(cache_path):
-        df = pd.read_csv(cache_path, index_col=0, parse_dates=True)
-        return df["price"]
-
-    from_ts = _unix_ms(start_date)
-    to_ts = _unix_ms(end_date)
-
-    resp = _api_get(
-        f"{COINGECKO_BASE_URL}/coins/{coin_id}/market_chart/range",
-        params={
-            "vs_currency": "usd",
-            "from": from_ts,
-            "to": to_ts,
-        },
-    )
-    prices_raw = resp.json().get("prices", [])
-
-    if not prices_raw:
-        return pd.Series(dtype=float, name="price")
-
-    df = pd.DataFrame(prices_raw, columns=["timestamp", "price"])
-    df["date"] = pd.to_datetime(df["timestamp"], unit="ms").dt.normalize()
-    # 同一日に複数データがある場合は最後の値 (UTC 00:00 に最も近い) を使用
-    df = df.drop_duplicates(subset="date", keep="last")
-    df = df.set_index("date").sort_index()
-
-    _ensure_cache_dir()
-    df[["price"]].to_csv(cache_path)
-
-    return df["price"]
-
-
 def collect_all_data() -> pd.DataFrame:
-    """全銘柄の日次終値を一つの DataFrame に統合.
+    """全銘柄の日次終値を yfinance から一括ダウンロード.
 
     Returns:
-        pd.DataFrame: index=日付, columns=coin_id, values=USD終値
+        pd.DataFrame: index=日付, columns=ティッカー, values=USD終値
     """
+    _ensure_cache_dir()
     combined_cache = os.path.join(DATA_DIR, "all_prices.csv")
     if os.path.exists(combined_cache):
         print("キャッシュからデータ読み込み中...")
@@ -148,35 +63,39 @@ def collect_all_data() -> pd.DataFrame:
         return df
 
     # 全Study Periodをカバーする日付範囲を算出
-    # SEQUENCE_LENGTH (90日) のバッファを含めて最も早い日から最も遅い日まで
     earliest = min(sp["train"][0] for sp in STUDY_PERIODS)
     latest = max(sp["test"][1] for sp in STUDY_PERIODS)
 
-    # 90日前からデータが必要
-    from datetime import timedelta
+    # 90日のルックバックバッファを追加
     earliest_dt = datetime.strptime(earliest, "%Y-%m-%d") - timedelta(days=120)
-    earliest_with_buffer = earliest_dt.strftime("%Y-%m-%d")
+    start_date = earliest_dt.strftime("%Y-%m-%d")
+    # yfinance の end は exclusive なので1日追加
+    end_dt = datetime.strptime(latest, "%Y-%m-%d") + timedelta(days=1)
+    end_date = end_dt.strftime("%Y-%m-%d")
 
-    print(f"データ取得範囲: {earliest_with_buffer} ~ {latest}")
+    print(f"データ取得範囲: {start_date} ~ {latest}")
+    print(f"{len(CRYPTO_TICKERS)} 銘柄の日次価格データを yfinance から一括取得中...")
 
-    coin_ids = fetch_top_coins_by_market_cap()
-    print(f"\n{len(coin_ids)} 銘柄の日次価格データを取得開始...")
+    # yfinance で一括ダウンロード
+    raw = yf.download(
+        CRYPTO_TICKERS,
+        start=start_date,
+        end=end_date,
+        auto_adjust=True,
+        progress=True,
+    )
 
-    all_series = {}
-    for i, coin_id in enumerate(coin_ids):
-        print(f"  [{i+1}/{len(coin_ids)}] {coin_id}")
-        try:
-            series = fetch_coin_price_history(coin_id, earliest_with_buffer, latest)
-            if len(series) > 0:
-                all_series[coin_id] = series
-        except Exception as e:
-            print(f"    エラー: {e}")
-        time.sleep(API_RATE_LIMIT_SLEEP)
+    # 終値を抽出
+    if isinstance(raw.columns, pd.MultiIndex):
+        price_df = raw["Close"]
+    else:
+        # 1銘柄のみの場合
+        price_df = raw[["Close"]].rename(columns={"Close": CRYPTO_TICKERS[0]})
 
-    price_df = pd.DataFrame(all_series)
-    price_df = price_df.sort_index()
+    # データが全くない銘柄を除外
+    valid_cols = price_df.columns[price_df.notna().sum() > 100]
+    price_df = price_df[valid_cols]
 
-    _ensure_cache_dir()
     price_df.to_csv(combined_cache)
     print(f"\n{len(price_df.columns)} 銘柄 × {len(price_df)} 日のデータ収集・キャッシュ完了")
 

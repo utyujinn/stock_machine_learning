@@ -7,10 +7,13 @@
 - 各Study Periodで独立に訓練セットの統計量で標準化
 """
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
 from config import SEQUENCE_LENGTH, STUDY_PERIODS
 

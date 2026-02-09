@@ -7,6 +7,11 @@ Jaquart et al. (2022) "Machine learning for cryptocurrency market prediction and
 import os
 import sys
 
+# stdout バッファリング無効化 (バックグラウンド実行時にリアルタイム出力)
+sys.stdout.reconfigure(line_buffering=True)
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # TensorFlow INFO/WARNING を抑制
+
 import matplotlib
 matplotlib.use("Agg")  # ヘッドレス環境対応
 import matplotlib.pyplot as plt

@@ -75,9 +75,3 @@ DROPOUT_RATE = 0.1
 # --- ポートフォリオ ---
 PORTFOLIO_K = 5
 TRANSACTION_COST_BPS = 15  # 片道 (half-turn) basis points
-
-# --- CoinGecko API ---
-COINGECKO_BASE_URL = "https://api.coingecko.com/api/v3"
-API_RATE_LIMIT_SLEEP = 6.0  # 秒 (無料プラン: 10-30 calls/min)
-API_MAX_RETRIES = 5
-API_RETRY_BACKOFF = 30  # 429エラー時の初回待機秒数
