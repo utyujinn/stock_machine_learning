@@ -15,13 +15,30 @@ import pandas as pd
 import requests
 
 from config import (
+    API_MAX_RETRIES,
     API_RATE_LIMIT_SLEEP,
+    API_RETRY_BACKOFF,
     COINGECKO_BASE_URL,
     DATA_DIR,
     EXCLUDED_COINS,
     STUDY_PERIODS,
     TOP_K_COINS,
 )
+
+
+def _api_get(url: str, params: dict) -> requests.Response:
+    """429リトライ付きGETリクエスト."""
+    for attempt in range(API_MAX_RETRIES):
+        resp = requests.get(url, params=params, timeout=30)
+        if resp.status_code == 429:
+            wait = API_RETRY_BACKOFF * (attempt + 1)
+            print(f"    429 Rate Limited. {wait}秒待機中... (試行 {attempt+1}/{API_MAX_RETRIES})")
+            time.sleep(wait)
+            continue
+        resp.raise_for_status()
+        return resp
+    resp.raise_for_status()
+    return resp
 
 
 def _ensure_cache_dir():
@@ -46,9 +63,9 @@ def fetch_top_coins_by_market_cap(date_str: str | None = None) -> list[str]:
 
     _ensure_cache_dir()
     all_coins = []
-    # CoinGecko は 1ページ250件まで
-    for page in range(1, 8):  # 最大1750件
-        resp = requests.get(
+    # CoinGecko は 1ページ250件まで。除外銘柄を考慮し余裕を持って取得
+    for page in range(1, 4):  # 750件 (Top100 + 除外分に十分)
+        resp = _api_get(
             f"{COINGECKO_BASE_URL}/coins/markets",
             params={
                 "vs_currency": "usd",
@@ -57,9 +74,7 @@ def fetch_top_coins_by_market_cap(date_str: str | None = None) -> list[str]:
                 "page": page,
                 "sparkline": "false",
             },
-            timeout=30,
         )
-        resp.raise_for_status()
         data = resp.json()
         if not data:
             break
@@ -94,16 +109,14 @@ def fetch_coin_price_history(coin_id: str, start_date: str, end_date: str) -> pd
     from_ts = _unix_ms(start_date)
     to_ts = _unix_ms(end_date)
 
-    resp = requests.get(
+    resp = _api_get(
         f"{COINGECKO_BASE_URL}/coins/{coin_id}/market_chart/range",
         params={
             "vs_currency": "usd",
             "from": from_ts,
             "to": to_ts,
         },
-        timeout=30,
     )
-    resp.raise_for_status()
     prices_raw = resp.json().get("prices", [])
 
     if not prices_raw:
