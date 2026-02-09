@@ -1,0 +1,13 @@
+[project]
+name = "machine-learning"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "matplotlib>=3.10.8",
+    "numpy>=2.4.2",
+    "pandas>=3.0.0",
+    "requests>=2.32.5",
+    "scikit-learn>=1.8.0",
+    "tensorflow>=2.20.0",
+]
