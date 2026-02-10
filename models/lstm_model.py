@@ -9,6 +9,9 @@
 - 10個のアンサンブル (異なる乱数シード)
 """
 
+import json
+import os
+
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -162,3 +165,41 @@ def ensemble_predict_ranks(
     avg_ranks = np.mean(all_ranks, axis=0)
 
     return {cid: rank for cid, rank in zip(coin_ids, avg_ranks)}
+
+
+def save_ensemble(models: list[keras.Model], path: str, config: dict):
+    """アンサンブルモデルと設定をディスクに保存.
+
+    Args:
+        models: 訓練済みモデルのリスト
+        path: 保存先ディレクトリ
+        config: {"best_units": int, "train_mean": float, "train_std": float}
+    """
+    os.makedirs(path, exist_ok=True)
+    for i, model in enumerate(models):
+        model.save(os.path.join(path, f"ensemble_{i}.keras"))
+    with open(os.path.join(path, "config.json"), "w") as f:
+        json.dump(config, f, indent=2)
+    print(f"  モデル保存完了: {path} ({len(models)} モデル)")
+
+
+def load_ensemble(path: str) -> tuple[list[keras.Model], dict]:
+    """保存済みアンサンブルモデルと設定を読込.
+
+    Returns:
+        (models_list, config_dict)
+    """
+    with open(os.path.join(path, "config.json")) as f:
+        config = json.load(f)
+
+    models = []
+    i = 0
+    while True:
+        model_path = os.path.join(path, f"ensemble_{i}.keras")
+        if not os.path.exists(model_path):
+            break
+        models.append(keras.models.load_model(model_path))
+        i += 1
+
+    print(f"  モデル読込完了: {path} ({len(models)} モデル, units={config['best_units']})")
+    return models, config
