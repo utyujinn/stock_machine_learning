@@ -15,9 +15,10 @@ MEXC Futures (USDT-M永久先物) で自動ポジション管理を行う。
 import argparse
 import json
 import os
-import select
+import queue
 import signal
 import sys
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -716,16 +717,19 @@ def run_once(dry_run: bool, exchange: ccxt.mexc) -> bool:
         except Exception as e:
             log(f"残高取得失敗: {e}")
 
-    # --- H. ポジション保存 ---
-    position_data = {
-        "timestamp": latest_date.isoformat(),
-        "timeframe": "4h",
-        "longs": new_longs,
-        "shorts": new_shorts,
-        "all_ranks": {k: float(v) for k, v in ranks.items()},
-    }
-    save_positions(POSITIONS_PATH, position_data)
-    log(f"ポジション保存: {POSITIONS_PATH}")
+    # --- H. ポジション保存 (LIVEモードのみ) ---
+    if dry_run:
+        log("DRY-RUNのためポジション状態は保存しません")
+    else:
+        position_data = {
+            "timestamp": latest_date.isoformat(),
+            "timeframe": "4h",
+            "longs": new_longs,
+            "shorts": new_shorts,
+            "all_ranks": {k: float(v) for k, v in ranks.items()},
+        }
+        save_positions(POSITIONS_PATH, position_data)
+        log(f"ポジション保存: {POSITIONS_PATH}")
 
     return True
 
@@ -738,6 +742,19 @@ def _print_help():
     """待機中に使えるコマンド一覧を表示."""
     print("  コマンド: [s]tatus  [c]lose-all  [q]uit  [h]elp")
     print("  > ", end="", flush=True)
+
+
+def _stdin_reader(q: queue.Queue):
+    """バックグラウンドスレッドでstdinを読み取る (Windows/Linux両対応)."""
+    try:
+        while True:
+            line = sys.stdin.readline()
+            if not line:  # EOF
+                q.put(None)
+                break
+            q.put(line.strip().lower())
+    except (EOFError, OSError):
+        q.put(None)
 
 
 def _interactive_wait(
@@ -754,35 +771,29 @@ def _interactive_wait(
     """
     global _shutdown
 
+    # stdin読み取りスレッドを起動
+    input_q: queue.Queue[str | None] = queue.Queue()
+    reader = threading.Thread(target=_stdin_reader, args=(input_q,), daemon=True)
+    reader.start()
+
     while not _shutdown:
         now = datetime.now(timezone.utc)
         if now >= next_run:
-            print()  # プロンプト行を改行
+            print()
             return None
 
-        # 残り時間
         remaining = (next_run - now).total_seconds()
-        # select で stdin を最大10秒待つ
-        timeout = min(10, max(0.5, remaining))
+
+        # キュー確認 (1秒ごと)
         try:
-            ready, _, _ = select.select([sys.stdin], [], [], timeout)
-        except (OSError, ValueError):
-            # シグナル割り込み時
-            if _shutdown:
-                print()
-                return "quit"
+            line = input_q.get(timeout=min(1, max(0.1, remaining)))
+        except queue.Empty:
             continue
 
-        if not ready:
-            continue
-
-        try:
-            line = sys.stdin.readline().strip().lower()
-        except EOFError:
+        if line is None:
             return "quit"
 
         if not line:
-            # 残り時間表示
             mins = remaining / 60
             log(f"次回まで {mins:.0f}分")
             print("  > ", end="", flush=True)
@@ -799,7 +810,10 @@ def _interactive_wait(
                 print("  > ", end="", flush=True)
             else:
                 print("  全ポジションを決済して停止しますか? [y/N]: ", end="", flush=True)
-                confirm = sys.stdin.readline().strip().lower()
+                try:
+                    confirm = input_q.get(timeout=30)
+                except queue.Empty:
+                    confirm = ""
                 if confirm in ("y", "yes"):
                     return "close_all"
                 else:
