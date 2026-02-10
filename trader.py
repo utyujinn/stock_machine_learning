@@ -113,6 +113,14 @@ def init_exchange(dry_run: bool = True) -> ccxt.bitget:
         exchange.options["createOrder"] = "disabled"
 
     exchange.load_markets()
+
+    # 双方向ポジションモード (hedge) に設定
+    # buy=ロング開設, sell=ショート開設, reduceOnly=決済 として使える
+    try:
+        exchange.set_position_mode(True)  # True = hedge mode
+    except Exception:
+        pass  # 既にhedgeモードの場合はエラーになるが無視
+
     log(f"Bitget Futures 接続完了 (マーケット数: {len(exchange.markets)})")
     return exchange
 
@@ -321,11 +329,13 @@ def _execute_limit_with_retry(
         except Exception as e:
             err_str = str(e)
             log(f"    注文作成失敗: {e}")
-            # 最小注文額未満 / 残高不足 → リトライしても無意味
+            # リトライしても無意味なエラー → 即座にリターン
             if "45110" in err_str or "minimum amount" in err_str.lower():
                 return {"error": f"最小注文額未満: {symbol}"}
             if "insufficient" in err_str.lower():
                 return {"error": f"残高不足: {symbol}"}
+            if "40774" in err_str or "unilateral" in err_str.lower():
+                return {"error": f"ポジションモードエラー: {symbol}"}
             # レート制限 → 少し待ってリトライ
             if "busy" in err_str.lower() or "frequent" in err_str.lower():
                 time.sleep(3)
