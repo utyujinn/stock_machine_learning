@@ -25,6 +25,9 @@ from datetime import datetime, timedelta, timezone
 sys.stdout.reconfigure(line_buffering=True)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
+# 日本標準時 (UTC+9)
+JST = timezone(timedelta(hours=9))
+
 import ccxt
 from dotenv import load_dotenv
 
@@ -70,8 +73,8 @@ def _handle_signal(signum, frame):
 
 
 def log(msg: str):
-    """タイムスタンプ付きログ出力."""
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    """タイムスタンプ付きログ出力 (JST)."""
+    ts = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] {msg}")
 
 
@@ -919,7 +922,8 @@ Ctrl+C ×2 で強制停止
             if next_run <= now:
                 next_run += timedelta(hours=TRADE_INTERVAL_HOURS)
 
-            log(f"次回実行: {next_run.strftime('%H:%M UTC')}")
+            next_run_jst = next_run.astimezone(JST)
+            log(f"次回実行: {next_run_jst.strftime('%H:%M JST')}")
             log("")
             _print_help()
 
