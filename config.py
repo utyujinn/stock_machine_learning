@@ -75,3 +75,4 @@ TRADE_LEVERAGE = 1                  # レバレッジ倍率
 TRADE_INTERVAL_HOURS = 4            # 実行間隔
 TRADE_LIMIT_OFFSET_PCT = 0.05      # 指値オフセット (%) - 現在価格から何%有利な位置に指値
 TRADE_LIMIT_TIMEOUT_SEC = 30        # 指値タイムアウト (秒) - 未約定なら成行にフォールバック
+TRADE_STOP_LOSS_PCT = 0.10          # ストップロス (10%) - エントリーから10%逆行で強制決済

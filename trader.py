@@ -41,6 +41,7 @@ from config import (
     TRADE_LEVERAGE,
     TRADE_LIMIT_OFFSET_PCT,
     TRADE_LIMIT_TIMEOUT_SEC,
+    TRADE_STOP_LOSS_PCT,
     TRADE_TOTAL_CAPITAL_USDT,
 )
 
@@ -199,6 +200,187 @@ def fetch_current_positions(exchange: ccxt.bitget) -> dict[str, dict]:
             "entryPrice": entry,
         }
     return result
+
+
+def check_stop_losses(
+    exchange: ccxt.bitget,
+    positions: dict[str, dict],
+    dry_run: bool,
+) -> list[str]:
+    """ストップロス判定 & 決済.
+
+    各ポジションのエントリー価格と現在価格を比較し、
+    TRADE_STOP_LOSS_PCT (10%) を超えて逆行しているポジションを決済する。
+
+    - LONG: 現在価格がエントリーから10%以上下落 → 決済
+    - SHORT: 現在価格がエントリーから10%以上上昇 → 決済
+
+    Returns:
+        決済されたcoin_idのリスト (例: ["ZEC-USD", "DASH-USD"])
+    """
+    if TRADE_STOP_LOSS_PCT <= 0:
+        return []
+
+    stopped_coins = []
+
+    for symbol, pos in positions.items():
+        entry_price = pos.get("entryPrice", 0)
+        if entry_price <= 0:
+            continue
+
+        # 現在価格を取得
+        try:
+            ticker = exchange.fetch_ticker(symbol)
+            current_price = ticker.get("last", 0)
+        except Exception:
+            continue
+        if current_price <= 0:
+            continue
+
+        side = pos["side"]
+        price_change = (current_price - entry_price) / entry_price
+
+        if side == "long" and price_change < -TRADE_STOP_LOSS_PCT:
+            # ロング: 値下がりでストップ
+            coin = exchange_symbol_to_coin(symbol)
+            log(f"  STOP LOSS: {coin} LONG エントリー${entry_price:.4f} → 現在${current_price:.4f} ({price_change:+.1%})")
+            result = close_position(exchange, symbol, "long", dry_run)
+            if result:
+                result["coin"] = coin
+                result["reason"] = "stop_loss"
+                log_trade(result)
+            stopped_coins.append(coin)
+
+        elif side == "short" and price_change > TRADE_STOP_LOSS_PCT:
+            # ショート: 値上がりでストップ
+            coin = exchange_symbol_to_coin(symbol)
+            log(f"  STOP LOSS: {coin} SHORT エントリー${entry_price:.4f} → 現在${current_price:.4f} ({price_change:+.1%})")
+            result = close_position(exchange, symbol, "short", dry_run)
+            if result:
+                result["coin"] = coin
+                result["reason"] = "stop_loss"
+                log_trade(result)
+            stopped_coins.append(coin)
+
+    return stopped_coins
+
+
+def place_stop_loss(
+    exchange: ccxt.bitget,
+    symbol: str,
+    side: str,
+    entry_price: float,
+    contracts: float,
+    dry_run: bool,
+) -> dict | None:
+    """ポジションに対するストップロストリガー注文を取引所に配置.
+
+    LONG: 価格がエントリーの-10%に下落 → 売りで決済
+    SHORT: 価格がエントリーの+10%に上昇 → 買いで決済
+
+    Args:
+        side: "long" or "short" (ポジションの方向)
+        entry_price: エントリー価格
+        contracts: コントラクト数
+    """
+    if TRADE_STOP_LOSS_PCT <= 0 or entry_price <= 0:
+        return None
+
+    if side == "long":
+        trigger_price = entry_price * (1 - TRADE_STOP_LOSS_PCT)
+        order_side = "sell"
+    else:
+        trigger_price = entry_price * (1 + TRADE_STOP_LOSS_PCT)
+        order_side = "buy"
+
+    trigger_price_str = exchange.price_to_precision(symbol, trigger_price)
+
+    if dry_run:
+        log(f"  [DRY-RUN] SLトリガー設定: {symbol} {side.upper()} → "
+            f"${trigger_price_str} ({TRADE_STOP_LOSS_PCT:.0%}逆行で決済)")
+        return {"symbol": symbol, "side": side, "triggerPrice": trigger_price_str, "dry_run": True}
+
+    try:
+        order = exchange.create_order(
+            symbol, "market", order_side, contracts, None,
+            params={
+                "triggerPrice": trigger_price_str,
+                "triggerType": "mark_price",
+                "tradeSide": "close",
+                "holdSide": side,
+            },
+        )
+        order_id = order.get("id", "")
+        log(f"  SLトリガー設定: {symbol} {side.upper()} → "
+            f"${trigger_price_str} (order_id={order_id})")
+        return {"symbol": symbol, "side": side, "triggerPrice": trigger_price_str, "order_id": order_id}
+    except Exception as e:
+        log(f"  SLトリガー設定失敗: {symbol} → {e}")
+        return {"symbol": symbol, "error": str(e)}
+
+
+def cancel_trigger_orders(
+    exchange: ccxt.bitget,
+    symbol: str,
+    dry_run: bool,
+) -> int:
+    """シンボルの全トリガー注文をキャンセル.
+
+    Returns:
+        キャンセルした注文数
+    """
+    if dry_run:
+        return 0
+
+    try:
+        orders = exchange.fetch_open_orders(symbol, params={"stop": True})
+    except Exception:
+        return 0
+
+    cancelled = 0
+    for order in orders:
+        try:
+            exchange.cancel_order(order["id"], symbol, params={"stop": True})
+            cancelled += 1
+        except Exception:
+            pass
+
+    if cancelled > 0:
+        log(f"  SLトリガーキャンセル: {symbol} ({cancelled}件)")
+    return cancelled
+
+
+def ensure_stop_losses(
+    exchange: ccxt.bitget,
+    positions: dict[str, dict],
+    dry_run: bool,
+):
+    """全ポジションにストップロストリガー注文があることを確認.
+
+    不足している場合は新規作成する。
+    """
+    if TRADE_STOP_LOSS_PCT <= 0:
+        return
+
+    for symbol, pos in positions.items():
+        entry_price = pos.get("entryPrice", 0)
+        contracts = pos.get("size", 0)
+        side = pos["side"]
+
+        if entry_price <= 0 or contracts <= 0:
+            continue
+
+        # 既存のトリガー注文を確認
+        try:
+            orders = exchange.fetch_open_orders(symbol, params={"stop": True})
+            has_sl = len(orders) > 0
+        except Exception:
+            has_sl = False
+
+        if not has_sl:
+            coin = exchange_symbol_to_coin(symbol)
+            log(f"  SLトリガー不足検出: {coin} {side.upper()} → 再設定")
+            place_stop_loss(exchange, symbol, side, entry_price, contracts, dry_run)
 
 
 def calculate_position_usdt(capital: float, k: int, leverage: int) -> float:
@@ -537,7 +719,7 @@ def sync_positions(
 
     log(f"1ポジション: {position_usdt:.1f} USDT (資金{TRADE_TOTAL_CAPITAL_USDT} / {2*PORTFOLIO_K}ポジション × {TRADE_LEVERAGE}xレバ)")
 
-    # Step 1: クローズ
+    # Step 1: クローズ (先にSLトリガーをキャンセル → ポジション決済)
     for coin, action in changes.items():
         if not action.startswith("CLOSE"):
             continue
@@ -545,6 +727,9 @@ def sync_positions(
         if not symbol:
             log(f"  {coin} → Bitget未対応 - スキップ")
             continue
+
+        # SLトリガー注文をキャンセル (通常決済と競合しないように)
+        cancel_trigger_orders(exchange, symbol, dry_run)
 
         side = "long" if action == "CLOSE_LONG" else "short"
         result = close_position(exchange, symbol, side, dry_run)
@@ -575,6 +760,14 @@ def sync_positions(
             result["coin"] = coin
             trades.append(result)
             log_trade(result)
+
+            # ポジション開設成功 → SLトリガー注文を配置
+            if "error" not in result:
+                fill_price = result.get("price", price)
+                contracts = result.get("amount", 0)
+                if contracts > 0 and fill_price > 0:
+                    place_stop_loss(exchange, symbol, side, fill_price, contracts, dry_run)
+
             if not dry_run:
                 time.sleep(1)  # レート制限対策
 
@@ -662,6 +855,8 @@ def cmd_close_all(exchange: ccxt.bitget, dry_run: bool):
     n_fail = 0
 
     for sym, pos in positions.items():
+        # SLトリガー注文をキャンセルしてから決済
+        cancel_trigger_orders(exchange, sym, dry_run)
         result = close_position(exchange, sym, pos["side"], dry_run)
         if result:
             log_trade(result)
@@ -760,6 +955,21 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
 
     if actual_longs or actual_shorts:
         log(f"取引所ポジション: LONG={actual_longs}, SHORT={actual_shorts}")
+
+    # --- E2. ストップロスチェック ---
+    stopped_coins = []
+    if actual_positions and TRADE_STOP_LOSS_PCT > 0:
+        log(f"ストップロスチェック (閾値: {TRADE_STOP_LOSS_PCT:.0%})...")
+        stopped_coins = check_stop_losses(exchange, actual_positions, dry_run)
+        if stopped_coins:
+            log(f"ストップロス決済: {stopped_coins}")
+            # 決済済みの銘柄をポジションリストから除外
+            actual_longs = [c for c in actual_longs if c not in stopped_coins]
+            actual_shorts = [c for c in actual_shorts if c not in stopped_coins]
+        else:
+            log("ストップロス該当なし")
+
+    if actual_longs or actual_shorts:
         prev_longs = actual_longs
         prev_shorts = actual_shorts
     else:
@@ -791,7 +1001,17 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
     else:
         log("ポジション変更なし")
 
-    # --- G. 残高確認 ---
+    # --- G. SLトリガー確認 (フォールバック) ---
+    # KEEP中のポジションにSLトリガーが無い場合に再設定
+    if not dry_run and TRADE_STOP_LOSS_PCT > 0:
+        try:
+            log("SLトリガー確認中...")
+            current_positions = fetch_current_positions(exchange)
+            ensure_stop_losses(exchange, current_positions, dry_run)
+        except Exception as e:
+            log(f"SLトリガー確認失敗: {e}")
+
+    # --- H. 残高確認 ---
     if not dry_run:
         try:
             balance = exchange.fetch_balance()

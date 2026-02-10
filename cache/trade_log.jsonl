@@ -31,3 +31,33 @@
 {"action": "close", "symbol": "NEO/USDT:USDT", "side": "long", "dry_run": true, "coin": "NEO-USD", "logged_at": "2026-02-10T09:51:03.361687+00:00"}
 {"action": "close", "symbol": "FLOW/USDT:USDT", "side": "short", "dry_run": true, "coin": "FLOW-USD", "logged_at": "2026-02-10T09:51:03.361839+00:00"}
 {"action": "open", "symbol": "CRV/USDT:USDT", "side": "long", "usdt": 1.0, "price": 0.24627680000000002, "amount": 4.058441558441558, "type": "limit", "dry_run": true, "coin": "CRV-USD", "logged_at": "2026-02-10T09:51:03.422725+00:00"}
+{"action": "open", "symbol": "FIL/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "FIL-USD", "logged_at": "2026-02-10T19:42:06.014653+00:00"}
+{"action": "open", "symbol": "CRV/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "CRV-USD", "logged_at": "2026-02-10T19:42:06.463382+00:00"}
+{"action": "open", "symbol": "BNB/USDT:USDT", "side": "long", "error": "最小注文額不足 (6.2 USDT)", "coin": "BNB-USD", "logged_at": "2026-02-10T19:42:06.915331+00:00"}
+{"action": "open", "symbol": "ALGO/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "ALGO-USD", "logged_at": "2026-02-10T19:42:07.363886+00:00"}
+{"action": "open", "symbol": "SKL/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "SKL-USD", "logged_at": "2026-02-10T19:42:07.815151+00:00"}
+{"action": "open", "symbol": "QNT/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "QNT-USD", "logged_at": "2026-02-10T19:42:08.269963+00:00"}
+{"action": "open", "symbol": "MINA/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "MINA-USD", "logged_at": "2026-02-10T19:42:08.715224+00:00"}
+{"action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "FLOW-USD", "logged_at": "2026-02-10T19:42:09.167169+00:00"}
+{"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "BAT-USD", "logged_at": "2026-02-10T19:42:09.619580+00:00"}
+{"action": "open", "symbol": "AXS/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "AXS-USD", "logged_at": "2026-02-10T19:42:10.068079+00:00"}
+{"action": "open", "symbol": "FIL/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "FIL-USD", "logged_at": "2026-02-10T19:53:41.906999+00:00"}
+{"action": "open", "symbol": "BNB/USDT:USDT", "side": "long", "error": "最小注文額不足 (6.2 USDT)", "coin": "BNB-USD", "logged_at": "2026-02-10T19:53:42.343657+00:00"}
+{"action": "open", "symbol": "CRV/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "CRV-USD", "logged_at": "2026-02-10T19:53:42.792103+00:00"}
+{"action": "open", "symbol": "ALGO/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "ALGO-USD", "logged_at": "2026-02-10T19:53:43.251503+00:00"}
+{"action": "open", "symbol": "SKL/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "SKL-USD", "logged_at": "2026-02-10T19:53:43.694849+00:00"}
+{"action": "open", "symbol": "MINA/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "MINA-USD", "logged_at": "2026-02-10T19:53:44.151771+00:00"}
+{"action": "open", "symbol": "QNT/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "QNT-USD", "logged_at": "2026-02-10T19:53:44.610170+00:00"}
+{"action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "FLOW-USD", "logged_at": "2026-02-10T19:53:45.137312+00:00"}
+{"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "BAT-USD", "logged_at": "2026-02-10T19:53:45.499220+00:00"}
+{"action": "open", "symbol": "AXS/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "AXS-USD", "logged_at": "2026-02-10T19:53:45.945760+00:00"}
+{"action": "open", "symbol": "FIL/USDT:USDT", "side": "long", "usdt": 10.0, "price": 0.8885555, "amount": 11.3, "type": "limit", "dry_run": true, "coin": "FIL-USD", "logged_at": "2026-02-10T19:54:59.099692+00:00"}
+{"action": "open", "symbol": "BNB/USDT:USDT", "side": "long", "usdt": 10.0, "price": 616.0918, "amount": 0.02, "type": "limit", "dry_run": true, "coin": "BNB-USD", "logged_at": "2026-02-10T19:54:59.548792+00:00"}
+{"action": "open", "symbol": "CRV/USDT:USDT", "side": "long", "usdt": 10.0, "price": 0.2322838, "amount": 44.0, "type": "limit", "dry_run": true, "coin": "CRV-USD", "logged_at": "2026-02-10T19:55:00.001983+00:00"}
+{"action": "open", "symbol": "ALGO/USDT:USDT", "side": "long", "usdt": 10.0, "price": 0.09095450000000001, "amount": 109.9, "type": "limit", "dry_run": true, "coin": "ALGO-USD", "logged_at": "2026-02-10T19:55:00.449357+00:00"}
+{"action": "open", "symbol": "SEI/USDT:USDT", "side": "long", "usdt": 10.0, "price": 0.0715642, "amount": 140.0, "type": "limit", "dry_run": true, "coin": "SEI-USD", "logged_at": "2026-02-10T19:55:00.899055+00:00"}
+{"action": "open", "symbol": "QNT/USDT:USDT", "side": "short", "usdt": 10.0, "price": 69.47471999999999, "amount": 0.15, "type": "limit", "dry_run": true, "coin": "QNT-USD", "logged_at": "2026-02-10T19:55:01.351579+00:00"}
+{"action": "open", "symbol": "MINA/USDT:USDT", "side": "short", "usdt": 10.0, "price": 0.06553275, "amount": 152.70000000000002, "type": "limit", "dry_run": true, "coin": "MINA-USD", "logged_at": "2026-02-10T19:55:01.802295+00:00"}
+{"action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "usdt": 10.0, "price": 0.05030514, "amount": 198.9, "type": "limit", "dry_run": true, "coin": "FLOW-USD", "logged_at": "2026-02-10T19:55:02.252283+00:00"}
+{"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "usdt": 10.0, "price": 0.13276635, "amount": 75.4, "type": "limit", "dry_run": true, "coin": "BAT-USD", "logged_at": "2026-02-10T19:55:02.702705+00:00"}
+{"action": "open", "symbol": "AXS/USDT:USDT", "side": "short", "usdt": 10.0, "price": 1.5277634999999998, "amount": 6.6000000000000005, "type": "limit", "dry_run": true, "coin": "AXS-USD", "logged_at": "2026-02-10T19:55:03.150165+00:00"}
