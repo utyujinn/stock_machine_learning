@@ -28,3 +28,6 @@
 {"action": "open", "symbol": "MINA/USDT:USDT", "side": "short", "usdt": 1.0, "price": 0.0656328, "amount": 15.243902439024389, "type": "limit", "dry_run": true, "coin": "MINA-USD", "logged_at": "2026-02-10T08:37:42.010607+00:00"}
 {"action": "open", "symbol": "ZEC/USDT:USDT", "side": "short", "usdt": 1.0, "price": 239.91989999999998, "amount": 0.004170141784820684, "type": "limit", "dry_run": true, "coin": "ZEC-USD", "logged_at": "2026-02-10T08:37:42.123397+00:00"}
 {"action": "open", "symbol": "AXS/USDT:USDT", "side": "short", "usdt": 1.0, "price": 1.4827409999999999, "amount": 0.6747638326585695, "type": "limit", "dry_run": true, "coin": "AXS-USD", "logged_at": "2026-02-10T08:37:42.200475+00:00"}
+{"action": "close", "symbol": "NEO/USDT:USDT", "side": "long", "dry_run": true, "coin": "NEO-USD", "logged_at": "2026-02-10T09:51:03.361687+00:00"}
+{"action": "close", "symbol": "FLOW/USDT:USDT", "side": "short", "dry_run": true, "coin": "FLOW-USD", "logged_at": "2026-02-10T09:51:03.361839+00:00"}
+{"action": "open", "symbol": "CRV/USDT:USDT", "side": "long", "usdt": 1.0, "price": 0.24627680000000002, "amount": 4.058441558441558, "type": "limit", "dry_run": true, "coin": "CRV-USD", "logged_at": "2026-02-10T09:51:03.422725+00:00"}
