@@ -366,21 +366,17 @@ def close_position(
     side: str,
     dry_run: bool,
 ) -> dict | None:
-    """既存ポジションを決済 (指値リトライ、成行は使わない)."""
+    """既存ポジションを決済 (flash close = 成行決済)."""
     try:
         if dry_run:
             log(f"  [DRY-RUN] CLOSE {side.upper()} {symbol}")
             return {"action": "close", "symbol": symbol, "side": side, "dry_run": True}
 
-        close_side = "sell" if side == "long" else "buy"
-        is_buy = close_side == "buy"
-        params = {"reduceOnly": True}
-
         # 現在のポジションサイズを取得
         positions = exchange.fetch_positions([symbol])
         pos_size = 0
         for p in positions:
-            if p["symbol"] == symbol and float(p.get("contracts", 0) or 0) > 0:
+            if p["symbol"] == symbol and p.get("side") == side and float(p.get("contracts", 0) or 0) > 0:
                 pos_size = float(p["contracts"])
                 break
 
@@ -388,22 +384,20 @@ def close_position(
             log(f"  {symbol} ポジションなし - スキップ")
             return None
 
-        # 現在価格取得
-        ticker = exchange.fetch_ticker(symbol)
-        current_price = ticker.get("last", 0)
-        if current_price <= 0:
-            return {"action": "close", "symbol": symbol, "error": "価格取得失敗"}
-
-        log(f"  CLOSE {side.upper()} {symbol} (現在${current_price:.4f})")
-        result = _execute_limit_with_retry(
-            exchange, symbol, close_side, pos_size, current_price,
-            is_buy=is_buy, params=params, label=f"CLOSE {side.upper()} {symbol}",
-        )
-        result["action"] = "close"
-        result["symbol"] = symbol
-        result["side"] = side
-        result["size"] = pos_size
-        return result
+        log(f"  CLOSE {side.upper()} {symbol} ({pos_size} contracts)")
+        # Bitget flash close (exchange.close_position) を使用
+        # create_order + tradeSide=close は Bitget API V2 で動作しないため
+        result = exchange.close_position(symbol, side=side)
+        order_id = result.get("id", "")
+        log(f"    決済完了 (order_id={order_id})")
+        return {
+            "action": "close",
+            "symbol": symbol,
+            "side": side,
+            "size": pos_size,
+            "order_id": order_id,
+            "type": "flash_close",
+        }
 
     except Exception as e:
         log(f"  CLOSE {symbol} 失敗: {e}")
@@ -504,7 +498,7 @@ def open_position(
         log(f"  {label} (現在${price:.4f})")
         result = _execute_limit_with_retry(
             exchange, symbol, order_side, amount, price,
-            is_buy=is_buy, label=label,
+            is_buy=is_buy, params={"tradeSide": "open"}, label=label,
         )
         result["action"] = "open"
         result["symbol"] = symbol
