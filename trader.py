@@ -377,6 +377,14 @@ def close_position(
         return {"action": "close", "symbol": symbol, "error": str(e)}
 
 
+def _get_min_order_usdt(exchange: ccxt.mexc, symbol: str, price: float) -> float:
+    """シンボルの最小注文額 (USDT) を取得."""
+    m = exchange.markets.get(symbol, {})
+    cs = m.get("contractSize", 1) or 1
+    min_amt = (m.get("limits", {}).get("amount", {}).get("min", 0)) or 0
+    return min_amt * cs * price
+
+
 def open_position(
     exchange: ccxt.mexc,
     symbol: str,
@@ -404,6 +412,12 @@ def open_position(
                 price = current_price
         except Exception:
             pass
+
+        # 最小注文額チェック
+        min_usdt = _get_min_order_usdt(exchange, symbol, price)
+        if usdt_amount < min_usdt:
+            log(f"  {symbol} → 注文額 {usdt_amount:.1f} USDT < 最小 {min_usdt:.1f} USDT - スキップ")
+            return {"action": "open", "symbol": symbol, "side": side, "error": f"最小注文額不足 ({min_usdt:.1f} USDT)"}
 
         amount = usdt_amount / price
         label = f"NEW {side.upper()} {symbol} {usdt_amount:.1f}USDT"
