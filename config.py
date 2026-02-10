@@ -68,3 +68,10 @@ TRANSACTION_COST_BPS = 15  # 片道 (half-turn) basis points
 CANDLE_INTERVAL = "4h"
 PERIODS_PER_YEAR_DAILY = 365          # 日足: 暗号資産は365日取引
 PERIODS_PER_YEAR_4H = 365 * 6        # 4h足: 1日6本 × 365日 = 2190
+
+# --- 自動トレード ---
+TRADE_TOTAL_CAPITAL_USDT = 10    # 総資金 (USDT)
+TRADE_LEVERAGE = 1                  # レバレッジ倍率
+TRADE_INTERVAL_HOURS = 4            # 実行間隔
+TRADE_LIMIT_OFFSET_PCT = 0.05      # 指値オフセット (%) - 現在価格から何%有利な位置に指値
+TRADE_LIMIT_TIMEOUT_SEC = 30        # 指値タイムアウト (秒) - 未約定なら成行にフォールバック
