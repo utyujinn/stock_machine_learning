@@ -8,9 +8,9 @@ Jaquart et al. (2022) "[Machine Learning for Cryptocurrency Market Prediction an
 # Python 3.13+ / uv 必須
 uv sync
 
-# MEXC 自動トレードを使う場合
+# Bitget 自動トレードを使う場合
 cp .env.example .env
-# .env に MEXC_API_KEY / MEXC_API_SECRET を設定
+# .env に BITGET_API_KEY / BITGET_API_SECRET / BITGET_API_PASSWORD を設定
 ```
 
 ### 依存ライブラリ
@@ -20,7 +20,7 @@ cp .env.example .env
 | tensorflow | LSTM モデル |
 | numpy / pandas / scikit-learn | データ処理 |
 | yfinance | 価格データ取得 (日足・4h足) |
-| ccxt | MEXC Futures API |
+| ccxt | Bitget Futures API |
 | python-dotenv | APIキー管理 |
 | matplotlib | グラフ出力 |
 
@@ -63,7 +63,7 @@ uv run python advisor.py --retrain
 
 ### 自動トレード (trader.py)
 
-MEXC Futures (USDT-M 永久先物) で自動売買を行う。
+Bitget Futures (USDT-M 永久先物) で自動売買を行う。
 
 ```bash
 # dry-run (注文は送信されない)
@@ -104,7 +104,7 @@ TRADE_LIMIT_OFFSET_PCT = 0.05   # 指値オフセット (%)
 TRADE_LIMIT_TIMEOUT_SEC = 30    # 指値タイムアウト (秒)
 ```
 
-- 指値注文のみ使用 (maker手数料 0%)
+- 指値注文のみ使用 (maker手数料 0.02%)
 - 約定しない場合はオフセットを縮小しながら最大4回リトライ
 - 最小注文額に満たない銘柄は自動スキップ
 
@@ -117,7 +117,7 @@ TRADE_LIMIT_TIMEOUT_SEC = 30    # 指値タイムアウト (秒)
 ├── main_4h.py                # 4h足バックテスト
 ├── main_4h_dynamic.py        # 4h動的リバランス実験
 ├── advisor.py                # 手動トレード推奨
-├── trader.py                 # MEXC自動トレードBot
+├── trader.py                 # Bitget自動トレードBot
 ├── data/
 │   ├── collector.py          # 日足データ取得 (yfinance)
 │   ├── collector_4h.py       # 4h足データ取得 (Binance API)

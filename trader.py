@@ -1,7 +1,7 @@
-"""LSTM Auto Trader - MEXC Futures 自動売買Bot.
+"""LSTM Auto Trader - Bitget Futures 自動売買Bot.
 
 advisor.py の推論パイプラインを再利用し、
-MEXC Futures (USDT-M永久先物) で自動ポジション管理を行う。
+Bitget Futures (USDT-M永久先物) で自動ポジション管理を行う。
 
 使い方:
   uv run python trader.py                      # 1回実行 (dry-run)
@@ -90,19 +90,21 @@ def log_trade(trade: dict):
 # 取引所接続
 # ============================================================
 
-def init_exchange(dry_run: bool = True) -> ccxt.mexc:
-    """MEXC Futures クライアントを初期化."""
+def init_exchange(dry_run: bool = True) -> ccxt.bitget:
+    """Bitget Futures クライアントを初期化."""
     load_dotenv()
-    api_key = os.getenv("MEXC_API_KEY")
-    api_secret = os.getenv("MEXC_API_SECRET")
+    api_key = os.getenv("BITGET_API_KEY")
+    api_secret = os.getenv("BITGET_API_SECRET")
+    api_password = os.getenv("BITGET_API_PASSWORD")
 
-    if not api_key or not api_secret:
-        log("エラー: .env に MEXC_API_KEY / MEXC_API_SECRET を設定してください")
+    if not api_key or not api_secret or not api_password:
+        log("エラー: .env に BITGET_API_KEY / BITGET_API_SECRET / BITGET_API_PASSWORD を設定してください")
         sys.exit(1)
 
-    exchange = ccxt.mexc({
+    exchange = ccxt.bitget({
         "apiKey": api_key,
         "secret": api_secret,
+        "password": api_password,
         "options": {"defaultType": "swap"},
     })
 
@@ -110,56 +112,61 @@ def init_exchange(dry_run: bool = True) -> ccxt.mexc:
         exchange.options["createOrder"] = "disabled"
 
     exchange.load_markets()
-    log(f"MEXC Futures 接続完了 (マーケット数: {len(exchange.markets)})")
+    log(f"Bitget Futures 接続完了 (マーケット数: {len(exchange.markets)})")
     return exchange
 
 
-# Binance → MEXC Futures シンボル名のマッピング (リブランド・デノミ対応)
+# Binance → Bitget Futures シンボル名のマッピング (リブランド・デノミ対応)
+# 元の名前を先に試し、なければマッピング名を試す
 _SYMBOL_MAP = {
-    "FIL": "FILECOIN",    # Filecoin
     "FTM": "S",           # Fantom → Sonic
     "MKR": "SKY",         # Maker → Sky
-    "BONK": "1000BONK",   # 1000倍デノミ
 }
 
-# 逆マッピング (MEXC → Binance)
+# 逆マッピング (Bitget → Binance)
 _SYMBOL_MAP_REV = {v: k for k, v in _SYMBOL_MAP.items()}
 
 
-def coin_to_mexc_symbol(coin_id: str) -> str | None:
-    """advisor銘柄名 → MEXC Futuresシンボルに変換.
+def coin_to_exchange_symbol(coin_id: str, exchange: ccxt.bitget) -> str | None:
+    """advisor銘柄名 → Bitget Futuresシンボルに変換.
 
     BTC-USD → BTC/USDT:USDT
-    FIL-USD → FILECOIN/USDT:USDT (マッピング適用)
+    FTM-USD → S/USDT:USDT (元の名前が無い場合のみマッピング適用)
+
+    Returns:
+        シンボル文字列、または未対応の場合None
     """
     base = coin_id.replace("-USD", "")
-    base = _SYMBOL_MAP.get(base, base)
+    # 元の名前を先に試す
     symbol = f"{base}/USDT:USDT"
-    return symbol
+    if symbol in exchange.markets:
+        return symbol
+    # マッピング名を試す
+    mapped = _SYMBOL_MAP.get(base)
+    if mapped:
+        symbol = f"{mapped}/USDT:USDT"
+        if symbol in exchange.markets:
+            return symbol
+    return None
 
 
-def mexc_symbol_to_coin(symbol: str) -> str:
-    """MEXC Futuresシンボル → advisor銘柄名に変換.
+def exchange_symbol_to_coin(symbol: str) -> str:
+    """Bitget Futuresシンボル → advisor銘柄名に変換.
 
     BTC/USDT:USDT → BTC-USD
-    FILECOIN/USDT:USDT → FIL-USD (逆マッピング適用)
+    S/USDT:USDT → FTM-USD (逆マッピング適用)
     """
     base = symbol.split("/")[0]
     base = _SYMBOL_MAP_REV.get(base, base)
     return f"{base}-USD"
 
 
-def check_symbol_available(exchange: ccxt.mexc, symbol: str) -> bool:
-    """シンボルがMEXC Futuresに存在するか確認."""
-    return symbol in exchange.markets
-
-
 # ============================================================
 # ポジション管理
 # ============================================================
 
-def fetch_current_positions(exchange: ccxt.mexc) -> dict[str, dict]:
-    """MEXC Futuresの現在のオープンポジションを取得.
+def fetch_current_positions(exchange: ccxt.bitget) -> dict[str, dict]:
+    """Bitget Futuresの現在のオープンポジションを取得.
 
     Returns:
         {symbol: {"side": "long"|"short", "size": float, "notional": float, "unrealizedPnl": float, "entryPrice": float}}
@@ -194,7 +201,7 @@ def calculate_position_usdt(capital: float, k: int, leverage: int) -> float:
 
 
 def _wait_for_fill(
-    exchange: ccxt.mexc,
+    exchange: ccxt.bitget,
     order_id: str,
     symbol: str,
     timeout: int = TRADE_LIMIT_TIMEOUT_SEC,
@@ -246,12 +253,12 @@ _LIMIT_OFFSETS = [
     TRADE_LIMIT_OFFSET_PCT,           # 1回目: 0.05% 有利
     TRADE_LIMIT_OFFSET_PCT,           # 2回目: 0.05% 有利 (最新価格で再指値)
     TRADE_LIMIT_OFFSET_PCT / 2,       # 3回目: 0.025% 有利
-    0.0,                               # 4回目: 現在価格ちょうど (maker手数料0%)
+    0.0,                               # 4回目: 現在価格ちょうど
 ]
 
 
 def _execute_limit_with_retry(
-    exchange: ccxt.mexc,
+    exchange: ccxt.bitget,
     symbol: str,
     order_side: str,
     amount: float,
@@ -267,7 +274,7 @@ def _execute_limit_with_retry(
         exchange: 取引所クライアント
         symbol: シンボル (例: BTC/USDT:USDT)
         order_side: "buy" or "sell"
-        amount: 注文数量
+        amount: 注文数量 (コントラクト単位)
         initial_price: 初回の参考価格
         is_buy: 買い注文ならTrue
         params: 追加パラメータ (reduceOnly等)
@@ -311,14 +318,20 @@ def _execute_limit_with_retry(
                 symbol, "limit", order_side, amount, limit_price, params=params,
             )
         except Exception as e:
+            err_str = str(e)
             log(f"    注文作成失敗: {e}")
+            # レート制限 → 少し待ってリトライ
+            if "busy" in err_str.lower() or "frequent" in err_str.lower():
+                time.sleep(3)
+            else:
+                time.sleep(2)
             continue
 
         filled = _wait_for_fill(exchange, order["id"], symbol)
 
         if filled:
             fill_price = filled.get("average", limit_price)
-            log(f"    約定 @ ${fill_price:.4f} ✓ (試行{attempt+1})")
+            log(f"    約定 @ ${fill_price:.4f} (試行{attempt+1})")
             return {
                 "price": fill_price,
                 "order_id": filled.get("id"),
@@ -332,7 +345,7 @@ def _execute_limit_with_retry(
 
 
 def close_position(
-    exchange: ccxt.mexc,
+    exchange: ccxt.bitget,
     symbol: str,
     side: str,
     dry_run: bool,
@@ -381,7 +394,7 @@ def close_position(
         return {"action": "close", "symbol": symbol, "error": str(e)}
 
 
-def _get_min_order_usdt(exchange: ccxt.mexc, symbol: str, price: float) -> float:
+def _get_min_order_usdt(exchange: ccxt.bitget, symbol: str, price: float) -> float:
     """シンボルの最小注文額 (USDT) を取得."""
     m = exchange.markets.get(symbol, {})
     cs = m.get("contractSize", 1) or 1
@@ -389,8 +402,18 @@ def _get_min_order_usdt(exchange: ccxt.mexc, symbol: str, price: float) -> float
     return min_amt * cs * price
 
 
+def _base_to_contracts(exchange: ccxt.bitget, symbol: str, base_amount: float) -> float:
+    """ベース通貨量をコントラクト数に変換.
+
+    例: BTC contractSize=0.001 → 0.005 BTC = 5 contracts
+    """
+    market = exchange.markets.get(symbol, {})
+    contract_size = float(market.get("contractSize", 1) or 1)
+    return base_amount / contract_size
+
+
 def open_position(
-    exchange: ccxt.mexc,
+    exchange: ccxt.bitget,
     symbol: str,
     side: str,
     usdt_amount: float,
@@ -399,7 +422,11 @@ def open_position(
 ) -> dict | None:
     """新規ポジションを開設 (指値リトライ、成行は使わない)."""
     try:
-        # レバレッジ設定
+        # マージンモード・レバレッジ設定
+        try:
+            exchange.set_margin_mode("cross", symbol)
+        except Exception:
+            pass
         try:
             exchange.set_leverage(TRADE_LEVERAGE, symbol)
         except Exception:
@@ -423,7 +450,9 @@ def open_position(
             log(f"  {symbol} → 注文額 {usdt_amount:.1f} USDT < 最小 {min_usdt:.1f} USDT - スキップ")
             return {"action": "open", "symbol": symbol, "side": side, "error": f"最小注文額不足 ({min_usdt:.1f} USDT)"}
 
-        amount = usdt_amount / price
+        # 数量計算 (コントラクト単位に変換)
+        base_amount = usdt_amount / price
+        amount = _base_to_contracts(exchange, symbol, base_amount)
         label = f"NEW {side.upper()} {symbol} {usdt_amount:.1f}USDT"
 
         if dry_run:
@@ -457,7 +486,7 @@ def open_position(
 # ============================================================
 
 def sync_positions(
-    exchange: ccxt.mexc,
+    exchange: ccxt.bitget,
     new_longs: list[str],
     new_shorts: list[str],
     changes: dict[str, str],
@@ -481,9 +510,9 @@ def sync_positions(
     for coin, action in changes.items():
         if not action.startswith("CLOSE"):
             continue
-        symbol = coin_to_mexc_symbol(coin)
-        if not symbol or not check_symbol_available(exchange, symbol):
-            log(f"  {coin} → MEXC未対応 - スキップ")
+        symbol = coin_to_exchange_symbol(coin, exchange)
+        if not symbol:
+            log(f"  {coin} → Bitget未対応 - スキップ")
             continue
 
         side = "long" if action == "CLOSE_LONG" else "short"
@@ -492,14 +521,16 @@ def sync_positions(
             result["coin"] = coin
             trades.append(result)
             log_trade(result)
+            if not dry_run:
+                time.sleep(1)  # レート制限対策
 
     # Step 2: 新規ポジション
     for coin, action in changes.items():
         if not action.startswith("NEW"):
             continue
-        symbol = coin_to_mexc_symbol(coin)
-        if not symbol or not check_symbol_available(exchange, symbol):
-            log(f"  {coin} → MEXC未対応 - スキップ")
+        symbol = coin_to_exchange_symbol(coin, exchange)
+        if not symbol:
+            log(f"  {coin} → Bitget未対応 - スキップ")
             continue
 
         price = prices.get(coin, 0)
@@ -513,11 +544,13 @@ def sync_positions(
             result["coin"] = coin
             trades.append(result)
             log_trade(result)
+            if not dry_run:
+                time.sleep(1)  # レート制限対策
 
     # Step 3: KEEP → ログのみ
     for coin, action in changes.items():
         if action.startswith("KEEP"):
-            symbol = coin_to_mexc_symbol(coin)
+            symbol = coin_to_exchange_symbol(coin, exchange)
             side = "LONG" if "LONG" in action else "SHORT"
             log(f"  KEEP {side} {symbol or coin}")
 
@@ -528,11 +561,11 @@ def sync_positions(
 # ステータス表示
 # ============================================================
 
-def cmd_status(exchange: ccxt.mexc):
+def cmd_status(exchange: ccxt.bitget):
     """現在のポジション状況を表示."""
     log("===== ポジション状況 =====")
 
-    # MEXC残高
+    # Bitget残高
     try:
         balance = exchange.fetch_balance()
         usdt = balance.get("USDT", {})
@@ -540,9 +573,9 @@ def cmd_status(exchange: ccxt.mexc):
     except Exception as e:
         log(f"残高取得失敗: {e}")
 
-    # MEXCの実ポジション
+    # Bitgetの実ポジション
     log("")
-    log("── MEXC オープンポジション ──")
+    log("── Bitget オープンポジション ──")
     try:
         positions = fetch_current_positions(exchange)
         if positions:
@@ -579,8 +612,8 @@ def cmd_status(exchange: ccxt.mexc):
 # 全ポジション決済
 # ============================================================
 
-def cmd_close_all(exchange: ccxt.mexc, dry_run: bool):
-    """MEXC上の全ポジションを決済し、内部状態もクリア."""
+def cmd_close_all(exchange: ccxt.bitget, dry_run: bool):
+    """Bitget上の全ポジションを決済し、内部状態もクリア."""
     mode = "DRY-RUN" if dry_run else "LIVE"
     log(f"===== 全ポジション決済 ({mode}) =====")
 
@@ -628,7 +661,7 @@ def cmd_close_all(exchange: ccxt.mexc, dry_run: bool):
 # メインサイクル
 # ============================================================
 
-def run_once(dry_run: bool, exchange: ccxt.mexc) -> bool:
+def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
     """1回の推論→執行サイクルを実行.
 
     Returns:
@@ -761,7 +794,7 @@ def _stdin_reader(q: queue.Queue):
 
 
 def _interactive_wait(
-    exchange: ccxt.mexc,
+    exchange: ccxt.bitget,
     dry_run: bool,
     next_run: datetime,
 ) -> str | None:
@@ -852,7 +885,7 @@ def _interactive_wait(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="LSTM Auto Trader (MEXC Futures)",
+        description="LSTM Auto Trader (Bitget Futures)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 運用コマンド:
@@ -898,9 +931,9 @@ Ctrl+C ×2 で強制停止
     if args.loop:
         log(f"ループモード開始 ({TRADE_INTERVAL_HOURS}h間隔)")
         if dry_run:
-            log("⚠ DRY-RUNモード: 注文は送信されません")
+            log("DRY-RUNモード: 注文は送信されません")
         else:
-            log("⚠ LIVEモード: 実際の注文が送信されます!")
+            log("LIVEモード: 実際の注文が送信されます!")
 
         while not _shutdown:
             try:
@@ -944,7 +977,7 @@ Ctrl+C ×2 で強制停止
     else:
         # 1回実行
         if dry_run:
-            log("⚠ DRY-RUNモード: 注文は送信されません (--live で本番実行)")
+            log("DRY-RUNモード: 注文は送信されません (--live で本番実行)")
         run_once(dry_run, exchange)
 
 
