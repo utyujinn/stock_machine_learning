@@ -14,6 +14,7 @@ Bitget Futures (USDT-M永久先物) で自動ポジション管理を行う。
 
 import argparse
 import json
+import math
 import os
 import queue
 import signal
@@ -320,6 +321,11 @@ def _execute_limit_with_retry(
         except Exception as e:
             err_str = str(e)
             log(f"    注文作成失敗: {e}")
+            # 最小注文額未満 / 残高不足 → リトライしても無意味
+            if "45110" in err_str or "minimum amount" in err_str.lower():
+                return {"error": f"最小注文額未満: {symbol}"}
+            if "insufficient" in err_str.lower():
+                return {"error": f"残高不足: {symbol}"}
             # レート制限 → 少し待ってリトライ
             if "busy" in err_str.lower() or "frequent" in err_str.lower():
                 time.sleep(3)
@@ -394,12 +400,16 @@ def close_position(
         return {"action": "close", "symbol": symbol, "error": str(e)}
 
 
+BITGET_MIN_NOTIONAL_USDT = 5.0  # Bitgetの最小注文額 (ハードリミット)
+
+
 def _get_min_order_usdt(exchange: ccxt.bitget, symbol: str, price: float) -> float:
     """シンボルの最小注文額 (USDT) を取得."""
     m = exchange.markets.get(symbol, {})
     cs = m.get("contractSize", 1) or 1
     min_amt = (m.get("limits", {}).get("amount", {}).get("min", 0)) or 0
-    return min_amt * cs * price
+    min_from_contracts = min_amt * cs * price
+    return max(min_from_contracts, BITGET_MIN_NOTIONAL_USDT)
 
 
 def _base_to_contracts(exchange: ccxt.bitget, symbol: str, base_amount: float) -> float:
@@ -410,6 +420,22 @@ def _base_to_contracts(exchange: ccxt.bitget, symbol: str, base_amount: float) -
     market = exchange.markets.get(symbol, {})
     contract_size = float(market.get("contractSize", 1) or 1)
     return base_amount / contract_size
+
+
+def _round_up_contracts(exchange: ccxt.bitget, symbol: str, amount: float) -> float:
+    """コントラクト数を有効精度で切り上げ (最小注文額を確保)."""
+    market = exchange.markets.get(symbol, {})
+    precision = market.get("precision", {}).get("amount")
+    if precision is None:
+        return amount
+    if exchange.precisionMode == ccxt.TICK_SIZE:
+        step = float(precision)
+        if step <= 0:
+            return amount
+        return math.ceil(amount / step) * step
+    else:
+        factor = 10 ** int(precision)
+        return math.ceil(amount * factor) / factor
 
 
 def open_position(
@@ -450,9 +476,10 @@ def open_position(
             log(f"  {symbol} → 注文額 {usdt_amount:.1f} USDT < 最小 {min_usdt:.1f} USDT - スキップ")
             return {"action": "open", "symbol": symbol, "side": side, "error": f"最小注文額不足 ({min_usdt:.1f} USDT)"}
 
-        # 数量計算 (コントラクト単位に変換)
+        # 数量計算 (コントラクト単位に変換、切り上げで最小注文額を確保)
         base_amount = usdt_amount / price
         amount = _base_to_contracts(exchange, symbol, base_amount)
+        amount = _round_up_contracts(exchange, symbol, amount)
         label = f"NEW {side.upper()} {symbol} {usdt_amount:.1f}USDT"
 
         if dry_run:
@@ -709,15 +736,32 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
         del m
     tf.keras.backend.clear_session()
 
-    # --- E. 動的リバランス ---
-    prev = load_positions(POSITIONS_PATH)
-    prev_longs = prev["longs"] if prev else None
-    prev_shorts = prev["shorts"] if prev else None
+    # --- E. 取引所の実ポジションを取得 → 動的リバランス ---
+    log("取引所ポジション確認中...")
+    try:
+        actual_positions = fetch_current_positions(exchange)
+    except Exception as e:
+        log(f"ポジション取得失敗: {e}")
+        actual_positions = {}
 
-    if prev:
-        log(f"前回ポジション: {prev.get('timestamp', '不明')}")
+    # 取引所の実ポジションをcoin IDに変換
+    actual_longs = []
+    actual_shorts = []
+    for sym, pos in actual_positions.items():
+        coin = exchange_symbol_to_coin(sym)
+        if pos["side"] == "long":
+            actual_longs.append(coin)
+        elif pos["side"] == "short":
+            actual_shorts.append(coin)
+
+    if actual_longs or actual_shorts:
+        log(f"取引所ポジション: LONG={actual_longs}, SHORT={actual_shorts}")
+        prev_longs = actual_longs
+        prev_shorts = actual_shorts
     else:
-        log("初回実行 (前回ポジションなし)")
+        log("取引所にポジションなし → 全銘柄を新規選定")
+        prev_longs = None
+        prev_shorts = None
 
     new_longs, new_shorts, changes = dynamic_rebalance(ranks, prev_longs, prev_shorts)
 
@@ -753,19 +797,37 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
         except Exception as e:
             log(f"残高取得失敗: {e}")
 
-    # --- H. ポジション保存 (LIVEモードのみ) ---
+    # --- H. ポジション保存 (LIVEモードのみ、取引所の実ポジションを確認して保存) ---
     if dry_run:
         log("DRY-RUNのためポジション状態は保存しません")
     else:
+        # 取引所の実ポジションを再取得して正確な状態を保存
+        try:
+            final_positions = fetch_current_positions(exchange)
+            final_longs = []
+            final_shorts = []
+            for sym, pos in final_positions.items():
+                coin = exchange_symbol_to_coin(sym)
+                if pos["side"] == "long":
+                    final_longs.append(coin)
+                elif pos["side"] == "short":
+                    final_shorts.append(coin)
+        except Exception:
+            # 取得失敗時は推奨を保存 (次回は取引所から再取得される)
+            final_longs = new_longs
+            final_shorts = new_shorts
+
         position_data = {
             "timestamp": latest_date.isoformat(),
             "timeframe": "4h",
-            "longs": new_longs,
-            "shorts": new_shorts,
+            "longs": final_longs,
+            "shorts": final_shorts,
+            "recommended_longs": new_longs,
+            "recommended_shorts": new_shorts,
             "all_ranks": {k: float(v) for k, v in ranks.items()},
         }
         save_positions(POSITIONS_PATH, position_data)
-        log(f"ポジション保存: {POSITIONS_PATH}")
+        log(f"ポジション保存: LONG={final_longs}, SHORT={final_shorts}")
 
     return True
 
