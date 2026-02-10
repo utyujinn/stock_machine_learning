@@ -1,59 +1,147 @@
-# stock-machine-learning
+# LSTM Crypto Trading Strategy
 
-## 1. データの収集と前処理
+Jaquart et al. (2022) "[Machine Learning for Cryptocurrency Market Prediction and Trading](https://doi.org/10.1016/j.jbef.2022.100723)" の LSTM ベース統計的裁定取引戦略の再現実装。
 
-学習の基盤となる高品質なデータセットを構築します。
+## セットアップ
 
-**銘柄選定:** 時価総額上位100位の銘柄を対象とし 、米ドル等の法定通貨にペグされたステーブルコインを除外します 。
+```bash
+# Python 3.13+ / uv 必須
+uv sync
 
-**データ取得:** `CoinGecko` 等のAPIを使用し、日次の終値（UTC 0:00時点）と時価総額を取得します 。
+# MEXC 自動トレードを使う場合
+cp .env.example .env
+# .env に MEXC_API_KEY / MEXC_API_SECRET を設定
+```
 
-**ラベル作成（Targets）:** 各日の全銘柄のリターンをソートし、中央値（Median）以上の銘柄に「1」、それ以外に「0」を割り当てます 。
+### 依存ライブラリ
 
-**特徴量生成（Features）:**
+| ライブラリ | 用途 |
+| --- | --- |
+| tensorflow | LSTM モデル |
+| numpy / pandas / scikit-learn | データ処理 |
+| yfinance | 価格データ取得 (日足・4h足) |
+| ccxt | MEXC Futures API |
+| python-dotenv | APIキー管理 |
+| matplotlib | グラフ出力 |
 
-**RNN用:** 過去90日間のリターンシーケンスを作成し、トレーニングセットの平均と標準偏差で標準化します 。
+## 戦略概要
 
-**木モデル用:** 1, 2...20, 30...90日前といった特定のラグ（計27個）を持たせた累積リターンを算出します 。
+1. 時価総額上位100暗号資産の過去90期間のリターン系列を特徴量に使用
+2. LSTM アンサンブル (10モデル) でクロスセクショナルランク予測
+3. 上位5銘柄をロング、下位5銘柄をショート (マーケットニュートラル)
+4. 動的リバランス: ランクが大きく変動した銘柄のみ入替 (回転率 ~60% 削減)
 
-## 2. モデルの構築と訓練
+## 使い方
 
-論文で最も高いパフォーマンス（シャープレシオ3.23）を記録した**LSTM**を中心に構成します 。
+### バックテスト
 
-* **アーキテクチャ設計:**
+```bash
+# 日足バックテスト (3 Study Period)
+uv run python main.py
 
-**入力層:** 長さ90の時系列リターンデータ 。
+# 4時間足バックテスト
+uv run python main_4h.py
 
-**再帰層:** 5〜20ユニットのLSTMまたはGRUレイヤー（ドロップアウト0.1） 。
+# 4時間足 動的リバランス実験 (0bps / 5bps / 15bps)
+uv run python main_4h_dynamic.py
+```
 
-**全結合層:** 5ニューロンのReLU層、および1ニューロンのシグモイド出力層 。
+結果は `output/`, `output_4h/`, `output_4h_dynamic/` に出力される。
 
-**学習設定:** `Adam` オプティマイザを用い、バイナリクロスエントロピー損失を最小化します 。過学習防止のため、検証セットの損失に基づいた「早期終了（Early Stopping）」を導入します 。
+### 手動トレード推奨 (advisor.py)
 
-**アンサンブル学習:** 乱数シードを変えて10個のモデルを訓練し、それぞれの予測ランクを平均化することで予測の安定性を高めます 。
+```bash
+# 4h足で売買推奨を表示 (保存済みモデル使用)
+uv run python advisor.py
 
-## 3. バックテストと運用戦略
+# 日足で推奨
+uv run python advisor.py --timeframe daily
 
-「精度59%」を利益に変換するためのポートフォリオ管理を実装します。
+# モデル再訓練してから推奨
+uv run python advisor.py --retrain
+```
 
-* **ポートフォリオ形成 ( 戦略):**
-* モデルの予測ランクに基づき、上位5銘柄をロング（買い）、下位5銘柄をショート（売り）する「ドル中立型」ポートフォリオを作成します 。
+### 自動トレード (trader.py)
 
-* 毎日ポジションを解消し、新たな予測に基づきリバランスを行います 。
-**コスト評価:** 片道15bps（0.15%）の取引コストを差し引いた後の純資産価値（NAV）を計算します 。
-**評価指標:** シャープレシオ、ソルティノレシオ、および最大ドローダウンを用いて、リスク調整後のリターンを検証します 。
+MEXC Futures (USDT-M 永久先物) で自動売買を行う。
 
-## 4. システムの最適化
+```bash
+# dry-run (注文は送信されない)
+uv run python trader.py
 
-論文の理論を現実の取引環境に適応させます。
+# 本番1回実行
+uv run python trader.py --live
 
-* **Rustへの移植:** 学習済みモデルを `ONNX` 形式で出力し、Rustの `ort` クレート等で推論エンジンを実装することで、リアルタイム実行を高速化します。
-**周期の短縮:** 論文は日次データですが、あなたの興味がある「リード・ラグ効果」を組み込み、5分足や1分足での実行にスケールダウンさせることで、より多くの裁定機会を狙える可能性があります 。
+# 4h毎の自動ループ
+uv run python trader.py --live --loop
 
-**実行基盤:** 現在構築中のWSL（Ubuntu）環境から、ゆくゆくは取引所サーバーに近いコロケーション環境へのデプロイを検討します。
+# ポジション状況確認
+uv run python trader.py --status
 
----
+# 全ポジション決済
+uv run python trader.py --close-all --live
+```
 
-まずは **「ステップ1：過去の時価総額上位100銘柄のヒストリカルデータ収集」** から着手するのが良さそうです。
+#### ループ中のインタラクティブコマンド
 
-具体的に、どのプログラミング言語（Pythonでの学習か、Rustでの推論か）から詳細な実装コードを検討していきましょうか？
+`--loop` 実行中は待機時間にコマンド入力が可能:
+
+| コマンド | 動作 |
+| --- | --- |
+| `s` / `status` | 残高・ポジション・PnL 表示 |
+| `c` / `close-all` | 全ポジション決済して停止 |
+| `q` / `quit` | ポジション保持したまま停止 |
+| `Enter` | 次回実行までの残り時間 |
+| `Ctrl+C` | 安全停止 (2回で強制停止) |
+
+#### トレード設定 (config.py)
+
+```python
+TRADE_TOTAL_CAPITAL_USDT = 10   # 総資金 (USDT)
+TRADE_LEVERAGE = 1               # レバレッジ倍率
+TRADE_INTERVAL_HOURS = 4         # 実行間隔
+TRADE_LIMIT_OFFSET_PCT = 0.05   # 指値オフセット (%)
+TRADE_LIMIT_TIMEOUT_SEC = 30    # 指値タイムアウト (秒)
+```
+
+- 指値注文のみ使用 (maker手数料 0%)
+- 約定しない場合はオフセットを縮小しながら最大4回リトライ
+- 最小注文額に満たない銘柄は自動スキップ
+
+## プロジェクト構成
+
+```text
+.
+├── config.py                 # 全パラメータ定義
+├── main.py                   # 日足バックテスト
+├── main_4h.py                # 4h足バックテスト
+├── main_4h_dynamic.py        # 4h動的リバランス実験
+├── advisor.py                # 手動トレード推奨
+├── trader.py                 # MEXC自動トレードBot
+├── data/
+│   ├── collector.py          # 日足データ取得 (yfinance)
+│   ├── collector_4h.py       # 4h足データ取得 (Binance API)
+│   └── preprocessor.py       # 特徴量・ターゲット生成
+├── models/
+│   └── lstm_model.py         # LSTMアンサンブル (訓練/予測/保存/読込)
+├── backtest/
+│   └── engine.py             # バックテストエンジン
+├── cache/                    # データキャッシュ・学習済みモデル
+│   ├── models/4h/            # 4h足モデル
+│   ├── models/daily/         # 日足モデル
+│   └── positions_4h.json     # 現在ポジション状態
+└── output*/                  # バックテスト結果
+```
+
+## バックテスト結果
+
+| 設定 | Sharpe | 精度 | 総リターン |
+| --- | --- | --- | --- |
+| 日足 | 3.57 | 57.7% | +13,044% |
+| 4h 動的リバランス (0bps) | 2.73 | - | +820% |
+| 4h 動的リバランス (5bps) | 1.59 | - | +213% |
+| 4h フルターンオーバー (15bps) | -5.48 | - | - |
+
+## 参考文献
+
+Jaquart, P., Dann, D., & Weinhardt, C. (2022). Machine learning for cryptocurrency market prediction and trading. *Journal of Behavioral and Experimental Finance*, 36, 100723.
