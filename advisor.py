@@ -15,7 +15,7 @@ import json
 import os
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(line_buffering=True)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -90,7 +90,7 @@ def fetch_recent_4h(n_candles: int = 100) -> pd.DataFrame:
             failed.append(ticker)
             continue
 
-        timestamps = [datetime.utcfromtimestamp(k[0] / 1000) for k in data]
+        timestamps = [datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc).replace(tzinfo=None) for k in data]
         closes = [float(k[4]) for k in data]
         all_data[col_name] = pd.Series(closes, index=timestamps)
 
@@ -412,7 +412,7 @@ def retrain_models(timeframe: str):
         "best_units": best_units,
         "train_mean": train_mean,
         "train_std": train_std,
-        "trained_at": datetime.utcnow().isoformat(),
+        "trained_at": datetime.now(timezone.utc).isoformat(),
         "sp_id": 3,
     }
     save_ensemble(models, model_path, config)
