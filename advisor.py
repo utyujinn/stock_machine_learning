@@ -30,6 +30,8 @@ from config import (
     PORTFOLIO_K,
     SEQUENCE_LENGTH,
     STUDY_PERIODS,
+    VOL_FILTER_LOOKBACK,
+    VOL_FILTER_MULTIPLIER,
 )
 from data.preprocessor import compute_returns, prepare_study_period
 from models.lstm_model import (
@@ -169,6 +171,54 @@ def build_current_features(
             current_prices[coin] = float(last_price)
 
     return latest_date, coin_samples, current_prices
+
+
+# ============================================================
+# ボラティリティフィルタ
+# ============================================================
+
+def apply_volatility_filter(
+    price_df: pd.DataFrame,
+    ranks: dict[str, float],
+    multiplier: float = VOL_FILTER_MULTIPLIER,
+    lookback: int = VOL_FILTER_LOOKBACK,
+) -> tuple[dict[str, float], list[str]]:
+    """ボラティリティフィルタを適用.
+
+    直近lookback本のリターン標準偏差が全銘柄中央値 × multiplier を
+    超える銘柄をランキングから除外する。
+
+    Returns:
+        (filtered_ranks, excluded_coins)
+    """
+    if multiplier is None:
+        return ranks, []
+
+    returns = compute_returns(price_df)
+    if len(returns) < lookback:
+        return ranks, []
+
+    window = returns.iloc[-lookback:]
+    vols = window.std().dropna()
+
+    if len(vols) == 0:
+        return ranks, []
+
+    vol_median = np.median(vols.values)
+    threshold = vol_median * multiplier
+
+    excluded = []
+    filtered = {}
+    for coin, rank in ranks.items():
+        if coin in vols.index and vols[coin] > threshold:
+            excluded.append(coin)
+        else:
+            filtered[coin] = rank
+
+    if len(filtered) < 2 * PORTFOLIO_K:
+        return ranks, []
+
+    return filtered, excluded
 
 
 # ============================================================
@@ -480,6 +530,13 @@ def main():
     print(f"\n[予測]")
     ranks = ensemble_predict_ranks(models, coin_samples)
     print(f"  {len(ranks)} 銘柄のランク予測完了")
+
+    # --- D2. ボラティリティフィルタ ---
+    ranks, excluded = apply_volatility_filter(price_df, ranks)
+    if excluded:
+        print(f"\n[ボラフィルタ] {len(excluded)}銘柄除外 (Vol>{VOL_FILTER_MULTIPLIER}×中央値): {', '.join(excluded)}")
+    else:
+        print(f"\n[ボラフィルタ] 除外なし")
 
     # --- E. 動的リバランス ---
     prev = load_positions(positions_path)

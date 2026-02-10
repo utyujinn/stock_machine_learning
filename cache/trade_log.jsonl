@@ -61,3 +61,13 @@
 {"action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "usdt": 10.0, "price": 0.05030514, "amount": 198.9, "type": "limit", "dry_run": true, "coin": "FLOW-USD", "logged_at": "2026-02-10T19:55:02.252283+00:00"}
 {"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "usdt": 10.0, "price": 0.13276635, "amount": 75.4, "type": "limit", "dry_run": true, "coin": "BAT-USD", "logged_at": "2026-02-10T19:55:02.702705+00:00"}
 {"action": "open", "symbol": "AXS/USDT:USDT", "side": "short", "usdt": 10.0, "price": 1.5277634999999998, "amount": 6.6000000000000005, "type": "limit", "dry_run": true, "coin": "AXS-USD", "logged_at": "2026-02-10T19:55:03.150165+00:00"}
+{"action": "open", "symbol": "SKL/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "SKL-USD", "logged_at": "2026-02-10T23:53:23.532107+00:00"}
+{"action": "open", "symbol": "CRV/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "CRV-USD", "logged_at": "2026-02-10T23:53:23.973917+00:00"}
+{"action": "open", "symbol": "DOGE/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "DOGE-USD", "logged_at": "2026-02-10T23:53:24.497257+00:00"}
+{"action": "open", "symbol": "COMP/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "COMP-USD", "logged_at": "2026-02-10T23:53:24.864584+00:00"}
+{"action": "open", "symbol": "VET/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "VET-USD", "logged_at": "2026-02-10T23:53:25.373831+00:00"}
+{"action": "open", "symbol": "ICP/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "ICP-USD", "logged_at": "2026-02-10T23:53:26.126521+00:00"}
+{"action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "FLOW-USD", "logged_at": "2026-02-10T23:53:26.652887+00:00"}
+{"action": "open", "symbol": "COTI/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "COTI-USD", "logged_at": "2026-02-10T23:53:27.099893+00:00"}
+{"action": "open", "symbol": "KNC/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "KNC-USD", "logged_at": "2026-02-10T23:53:27.556411+00:00"}
+{"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "BAT-USD", "logged_at": "2026-02-10T23:53:28.003109+00:00"}

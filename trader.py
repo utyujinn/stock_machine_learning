@@ -43,9 +43,11 @@ from config import (
     TRADE_LIMIT_TIMEOUT_SEC,
     TRADE_STOP_LOSS_PCT,
     TRADE_TOTAL_CAPITAL_USDT,
+    VOL_FILTER_MULTIPLIER,
 )
 
 from advisor import (
+    apply_volatility_filter,
     build_current_features,
     dynamic_rebalance,
     fetch_recent_4h,
@@ -695,6 +697,87 @@ def open_position(
 
 
 # ============================================================
+# 発注指示書
+# ============================================================
+
+def print_order_sheet(
+    exchange: ccxt.bitget,
+    new_longs: list[str],
+    new_shorts: list[str],
+    changes: dict[str, str],
+    prices: dict[str, float],
+):
+    """Bitget発注指示書を出力.
+
+    銘柄・サイド・現在価格・SLトリガー価格を一覧表示する。
+    """
+    position_usdt = calculate_position_usdt(
+        TRADE_TOTAL_CAPITAL_USDT, PORTFOLIO_K, TRADE_LEVERAGE,
+    )
+
+    log("")
+    log("=" * 72)
+    log("  Bitget 発注指示書")
+    log("=" * 72)
+    log(f"  {'アクション':<14s} {'銘柄':<22s} {'サイド':<7s} {'価格':>12s} {'SL価格':>12s} {'金額':>8s}")
+    log(f"  {'─' * 68}")
+
+    # NEW + KEEP をまとめて表示
+    for coin in new_longs + new_shorts:
+        action = changes.get(coin, "")
+        side = "LONG" if coin in new_longs else "SHORT"
+        price = prices.get(coin, 0)
+
+        # SLトリガー価格
+        if side == "LONG":
+            sl_price = price * (1 - TRADE_STOP_LOSS_PCT)
+        else:
+            sl_price = price * (1 + TRADE_STOP_LOSS_PCT)
+
+        # Bitgetシンボル
+        symbol = coin_to_exchange_symbol(coin, exchange)
+        symbol_str = symbol if symbol else f"{coin} (未対応)"
+
+        # 価格フォーマット
+        if symbol and price > 0:
+            price_str = f"${exchange.price_to_precision(symbol, price)}"
+            sl_str = f"${exchange.price_to_precision(symbol, sl_price)}"
+        elif price > 0:
+            price_str = f"${price:.4f}"
+            sl_str = f"${sl_price:.4f}"
+        else:
+            price_str = "---"
+            sl_str = "---"
+
+        if action.startswith("NEW"):
+            action_label = "NEW"
+            usdt_str = f"{position_usdt:.0f}"
+        else:
+            action_label = "KEEP"
+            usdt_str = "---"
+
+        log(f"  {action_label:<14s} {symbol_str:<22s} {side:<7s} {price_str:>12s} {sl_str:>12s} {usdt_str:>8s}")
+
+    # CLOSE
+    close_items = [(c, a) for c, a in changes.items() if a.startswith("CLOSE")]
+    if close_items:
+        log(f"  {'─' * 68}")
+        for coin, action in close_items:
+            side = "LONG" if action == "CLOSE_LONG" else "SHORT"
+            symbol = coin_to_exchange_symbol(coin, exchange)
+            symbol_str = symbol if symbol else f"{coin} (未対応)"
+            log(f"  {'CLOSE':<14s} {symbol_str:<22s} {side:<7s}")
+
+    log(f"  {'─' * 68}")
+    n_new = sum(1 for a in changes.values() if a.startswith("NEW"))
+    n_keep = sum(1 for a in changes.values() if a.startswith("KEEP"))
+    n_close = sum(1 for a in changes.values() if a.startswith("CLOSE"))
+    log(f"  NEW: {n_new} | KEEP: {n_keep} | CLOSE: {n_close} | SL: {TRADE_STOP_LOSS_PCT:.0%} | 1pos: {position_usdt:.0f} USDT")
+    log("=" * 72)
+    log("")
+
+
+# ============================================================
 # ポジション同期
 # ============================================================
 
@@ -929,6 +1012,13 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
     ranks = ensemble_predict_ranks(models, coin_samples)
     log(f"{len(ranks)} 銘柄の予測完了")
 
+    # --- D2. ボラティリティフィルタ ---
+    ranks, excluded = apply_volatility_filter(price_df, ranks)
+    if excluded:
+        log(f"ボラフィルタ: {len(excluded)}銘柄除外 (Vol>{VOL_FILTER_MULTIPLIER}×中央値): {', '.join(excluded)}")
+    else:
+        log("ボラフィルタ: 除外なし")
+
     # メモリ解放
     import tensorflow as tf
     for m in models:
@@ -985,9 +1075,8 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
     n_close = sum(1 for a in changes.values() if a.startswith("CLOSE"))
     log(f"リバランス: NEW={n_new}, KEEP={n_keep}, CLOSE={n_close}")
 
-    # ロング・ショート表示
-    log(f"LONG: {', '.join(new_longs)}")
-    log(f"SHORT: {', '.join(new_shorts)}")
+    # --- 発注指示書 ---
+    print_order_sheet(exchange, new_longs, new_shorts, changes, current_prices)
 
     # --- F. ポジション同期 ---
     if n_new > 0 or n_close > 0:
