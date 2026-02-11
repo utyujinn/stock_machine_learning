@@ -30,8 +30,11 @@ from config import (
     PORTFOLIO_K,
     SEQUENCE_LENGTH,
     STUDY_PERIODS,
+    TRAIN_DAYS,
+    VAL_DAYS,
     VOL_FILTER_LOOKBACK,
     VOL_FILTER_MULTIPLIER,
+    make_rolling_sp,
 )
 from data.preprocessor import compute_returns, prepare_study_period
 from models.lstm_model import (
@@ -53,41 +56,55 @@ SP3_CONFIG = STUDY_PERIODS[2]  # 最新のStudy Period
 # ============================================================
 
 def fetch_recent_4h(n_candles: int = 100) -> pd.DataFrame:
-    """Binance APIから各銘柄の直近4hキャンドルを取得."""
+    """Binance APIから各銘柄の直近4hキャンドルを取得.
+
+    n_candles > 1000 の場合はページネーションで複数リクエストに分割。
+    """
     from data.collector_4h import BINANCE_TICKERS, BINANCE_API_URL, _ticker_to_column
     import requests
 
-    print("  最新4hデータを Binance から取得中...")
+    use_pagination = n_candles > 1000
+
+    print(f"  最新4hデータを Binance から取得中{'(大量取得モード)' if use_pagination else ''}...")
     all_data = {}
     failed = []
 
+    # ページネーション用: 終了時刻(ms)と開始時刻(ms)を計算
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    start_ms = now_ms - n_candles * 4 * 3600 * 1000 if use_pagination else None
+
     for i, ticker in enumerate(BINANCE_TICKERS):
         col_name = _ticker_to_column(ticker)
-        params = {
-            "symbol": ticker,
-            "interval": "4h",
-            "limit": n_candles,
-        }
-        for attempt in range(3):
-            try:
-                resp = requests.get(BINANCE_API_URL, params=params, timeout=30)
-                if resp.status_code == 429:
-                    time.sleep(5)
-                    continue
-                resp.raise_for_status()
-                break
-            except Exception:
-                if attempt == 2:
-                    failed.append(ticker)
-                    break
-                time.sleep(2)
+
+        if use_pagination:
+            # ページネーション: collector_4h._fetch_klines と同じ方式
+            from data.collector_4h import _fetch_klines
+            data = _fetch_klines(ticker, "4h", start_ms, now_ms)
         else:
-            continue
+            # 単一リクエスト (従来方式)
+            params = {
+                "symbol": ticker,
+                "interval": "4h",
+                "limit": n_candles,
+            }
+            data = None
+            for attempt in range(3):
+                try:
+                    resp = requests.get(BINANCE_API_URL, params=params, timeout=30)
+                    if resp.status_code == 429:
+                        time.sleep(5)
+                        continue
+                    resp.raise_for_status()
+                    data = resp.json()
+                    break
+                except Exception:
+                    if attempt == 2:
+                        failed.append(ticker)
+                    time.sleep(2)
 
-        if ticker in failed:
-            continue
+            if ticker in failed or data is None:
+                continue
 
-        data = resp.json()
         if len(data) < 10:
             failed.append(ticker)
             continue
@@ -98,7 +115,8 @@ def fetch_recent_4h(n_candles: int = 100) -> pd.DataFrame:
 
         if (i + 1) % 20 == 0:
             print(f"    {i + 1}/{len(BINANCE_TICKERS)} 銘柄取得完了")
-        time.sleep(0.05)
+        if not use_pagination:
+            time.sleep(0.05)
 
     if failed:
         print(f"  {len(failed)} 銘柄が取得失敗")
@@ -413,21 +431,24 @@ def display_recommendations(
 # ============================================================
 
 def retrain_models(timeframe: str):
-    """SP3のデータでモデルを訓練し保存."""
-    print(f"\n[モデル訓練] {timeframe}足 SP3 モデルを訓練中...")
+    """ローリングSPでモデルを訓練し保存."""
+    sp_config = make_rolling_sp()
+    print(f"\n[モデル訓練] {timeframe}足 ローリングSP モデルを訓練中...")
+    print(f"  訓練: {sp_config['train'][0]} ~ {sp_config['train'][1]}")
+    print(f"  検証: {sp_config['val'][0]} ~ {sp_config['val'][1]}")
 
-    # データ取得
+    # 最新データ取得 (キャッシュ不使用)
+    n_candles = (TRAIN_DAYS + VAL_DAYS + SEQUENCE_LENGTH) * 6 + 100
     if timeframe == "4h":
-        from data.collector_4h import collect_4h_data
-        price_df = collect_4h_data()
+        price_df = fetch_recent_4h(n_candles=n_candles)
     else:
         from data.collector import collect_all_data
         price_df = collect_all_data()
 
     print(f"  価格データ: {price_df.shape[1]} 銘柄 × {price_df.shape[0]} 本")
 
-    # SP3 の訓練/検証データ準備
-    sp_data = prepare_study_period(price_df, SP3_CONFIG)
+    # ローリングSP の訓練/検証データ準備
+    sp_data = prepare_study_period(price_df, sp_config)
 
     # ハイパーパラメータ探索
     print("\n  ハイパーパラメータ探索...")
@@ -446,10 +467,10 @@ def retrain_models(timeframe: str):
 
     # 訓練統計を取得 (特徴量標準化に使用)
     returns = compute_returns(price_df)
-    train_start, train_end = SP3_CONFIG["train"]
+    train_start, train_end = sp_config["train"]
     all_coins = [
         col for col in price_df.columns
-        if price_df[col].loc[train_start:SP3_CONFIG["test"][1]].notna().sum() > 100
+        if price_df[col].loc[train_start:sp_config["test"][1]].notna().sum() > 100
     ]
     train_vals = returns.loc[train_start:train_end][all_coins].values.flatten()
     train_vals = train_vals[np.isfinite(train_vals)]
@@ -463,7 +484,9 @@ def retrain_models(timeframe: str):
         "train_mean": train_mean,
         "train_std": train_std,
         "trained_at": datetime.now(timezone.utc).isoformat(),
-        "sp_id": 3,
+        "sp_id": "rolling",
+        "train_period": list(sp_config["train"]),
+        "val_period": list(sp_config["val"]),
     }
     save_ensemble(models, model_path, config)
 

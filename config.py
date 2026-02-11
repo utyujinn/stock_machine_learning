@@ -1,6 +1,7 @@
 """論文 Jaquart et al. (2022) の全パラメータ定義."""
 
 import os
+from datetime import datetime, timedelta, timezone
 
 # --- パス ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -74,9 +75,45 @@ TRADE_TOTAL_CAPITAL_USDT = 40    # 総資金 (USDT)
 TRADE_LEVERAGE = 2                  # レバレッジ倍率
 TRADE_INTERVAL_HOURS = 4            # 実行間隔
 TRADE_LIMIT_OFFSET_PCT = 0.05      # 指値オフセット (%) - 現在価格から何%有利な位置に指値
-TRADE_LIMIT_TIMEOUT_SEC = 30        # 指値タイムアウト (秒) - 未約定なら成行にフォールバック
+TRADE_LIMIT_TIMEOUT_SEC = 120        # 指値タイムアウト (秒) - 未約定なら成行にフォールバック
 TRADE_STOP_LOSS_PCT = 0             # ストップロス無効 (ボラフィルタで代替)
 
 # --- ボラティリティフィルタ ---
 VOL_FILTER_MULTIPLIER = 2.0         # 中央値の何倍でフィルタ (None=無効)
 VOL_FILTER_LOOKBACK = 18            # ボラ計算期間 (4h足本数, 18=3日分)
+
+# --- 定期再訓練 ---
+RETRAIN_INTERVAL_DAYS = 7           # 再訓練間隔 (日)
+RETRAIN_UTC_HOUR = 0                # 再訓練実行時刻 (UTC, 0=JST 9:00)
+
+
+def make_rolling_sp(reference_date: datetime | None = None) -> dict:
+    """今日の日付からローリングStudy Periodを自動算出.
+
+    Args:
+        reference_date: 基準日 (None=今日UTC)
+
+    Returns:
+        dict: STUDY_PERIODS と同じ形式 (id, train, val, test)
+    """
+    if reference_date is None:
+        ref = datetime.now(timezone.utc).date()
+    elif hasattr(reference_date, "date"):
+        ref = reference_date.date()
+    else:
+        ref = reference_date
+
+    val_end = ref - timedelta(days=1)
+    val_start = val_end - timedelta(days=VAL_DAYS - 1)
+    train_end = val_start - timedelta(days=1)
+    train_start = train_end - timedelta(days=TRAIN_DAYS - 1)
+    test_start = val_end + timedelta(days=1)
+    test_end = test_start + timedelta(days=TEST_DAYS - 1)
+
+    fmt = "%Y-%m-%d"
+    return {
+        "id": "rolling",
+        "train": (train_start.strftime(fmt), train_end.strftime(fmt)),
+        "val": (val_start.strftime(fmt), val_end.strftime(fmt)),
+        "test": (test_start.strftime(fmt), test_end.strftime(fmt)),
+    }
