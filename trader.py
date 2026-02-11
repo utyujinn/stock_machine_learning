@@ -550,13 +550,9 @@ def close_position(
     side: str,
     dry_run: bool,
 ) -> dict | None:
-    """既存ポジションを決済 (flash close = 成行決済)."""
+    """既存ポジションを指値で決済 (全回失敗時はフラッシュクローズ)."""
     try:
-        if dry_run:
-            log(f"  [DRY-RUN] CLOSE {side.upper()} {symbol}")
-            return {"action": "close", "symbol": symbol, "side": side, "dry_run": True}
-
-        # 現在のポジションサイズを取得
+        # ポジションサイズを取得
         positions = exchange.fetch_positions([symbol])
         pos_size = 0
         for p in positions:
@@ -568,20 +564,62 @@ def close_position(
             log(f"  {symbol} ポジションなし - スキップ")
             return None
 
-        log(f"  CLOSE {side.upper()} {symbol} ({pos_size} contracts)")
-        # Bitget flash close (exchange.close_position) を使用
-        # create_order + tradeSide=close は Bitget API V2 で動作しないため
-        result = exchange.close_position(symbol, side=side)
-        order_id = result.get("id", "")
-        log(f"    決済完了 (order_id={order_id})")
-        return {
-            "action": "close",
-            "symbol": symbol,
-            "side": side,
-            "size": pos_size,
-            "order_id": order_id,
-            "type": "flash_close",
-        }
+        order_side = "sell" if side == "long" else "buy"
+        is_buy = order_side == "buy"
+
+        # 現在価格
+        try:
+            ticker = exchange.fetch_ticker(symbol)
+            current_price = ticker.get("last", 0)
+        except Exception:
+            current_price = 0
+
+        label = f"CLOSE {side.upper()} {symbol} ({pos_size} contracts)"
+
+        if dry_run:
+            if current_price > 0:
+                limit_price = _calc_limit_price(current_price, is_buy, TRADE_LIMIT_OFFSET_PCT)
+                log(f"  [DRY-RUN] {label} → 指値${limit_price:.4f} (現在${current_price:.4f})")
+            else:
+                log(f"  [DRY-RUN] {label}")
+            return {"action": "close", "symbol": symbol, "side": side, "size": pos_size, "dry_run": True}
+
+        if current_price <= 0:
+            log(f"  {label} → 価格不明、フラッシュクローズ")
+            result = exchange.close_position(symbol, side=side)
+            return {
+                "action": "close", "symbol": symbol, "side": side,
+                "size": pos_size, "order_id": result.get("id", ""),
+                "type": "flash_close",
+            }
+
+        log(f"  {label} (現在${current_price:.4f})")
+        result = _execute_limit_with_retry(
+            exchange, symbol, order_side, pos_size, current_price,
+            is_buy=is_buy,
+            params={"tradeSide": "close", "holdSide": side},
+            label=label,
+        )
+
+        if result and "error" not in result:
+            result["action"] = "close"
+            result["symbol"] = symbol
+            result["side"] = side
+            result["size"] = pos_size
+            return result
+
+        # 指値全回失敗 → フラッシュクローズにフォールバック
+        log(f"    指値全回失敗 → フラッシュクローズにフォールバック")
+        try:
+            fb = exchange.close_position(symbol, side=side)
+            return {
+                "action": "close", "symbol": symbol, "side": side,
+                "size": pos_size, "order_id": fb.get("id", ""),
+                "type": "flash_close_fallback",
+            }
+        except Exception as e2:
+            log(f"    フラッシュクローズも失敗: {e2}")
+            return {"action": "close", "symbol": symbol, "error": str(e2)}
 
     except Exception as e:
         log(f"  CLOSE {symbol} 失敗: {e}")
@@ -716,23 +754,17 @@ def print_order_sheet(
     )
 
     log("")
-    log("=" * 72)
+    log("=" * 66)
     log("  Bitget 発注指示書")
-    log("=" * 72)
-    log(f"  {'アクション':<14s} {'銘柄':<22s} {'サイド':<7s} {'価格':>12s} {'SL価格':>12s} {'金額':>8s}")
-    log(f"  {'─' * 68}")
+    log("=" * 66)
+    log(f"  {'アクション':<14s} {'銘柄':<22s} {'サイド':<7s} {'価格':>12s} {'金額':>8s}")
+    log(f"  {'─' * 62}")
 
     # NEW + KEEP をまとめて表示
     for coin in new_longs + new_shorts:
         action = changes.get(coin, "")
         side = "LONG" if coin in new_longs else "SHORT"
         price = prices.get(coin, 0)
-
-        # SLトリガー価格
-        if side == "LONG":
-            sl_price = price * (1 - TRADE_STOP_LOSS_PCT)
-        else:
-            sl_price = price * (1 + TRADE_STOP_LOSS_PCT)
 
         # Bitgetシンボル
         symbol = coin_to_exchange_symbol(coin, exchange)
@@ -741,13 +773,10 @@ def print_order_sheet(
         # 価格フォーマット
         if symbol and price > 0:
             price_str = f"${exchange.price_to_precision(symbol, price)}"
-            sl_str = f"${exchange.price_to_precision(symbol, sl_price)}"
         elif price > 0:
             price_str = f"${price:.4f}"
-            sl_str = f"${sl_price:.4f}"
         else:
             price_str = "---"
-            sl_str = "---"
 
         if action.startswith("NEW"):
             action_label = "NEW"
@@ -756,24 +785,24 @@ def print_order_sheet(
             action_label = "KEEP"
             usdt_str = "---"
 
-        log(f"  {action_label:<14s} {symbol_str:<22s} {side:<7s} {price_str:>12s} {sl_str:>12s} {usdt_str:>8s}")
+        log(f"  {action_label:<14s} {symbol_str:<22s} {side:<7s} {price_str:>12s} {usdt_str:>8s}")
 
     # CLOSE
     close_items = [(c, a) for c, a in changes.items() if a.startswith("CLOSE")]
     if close_items:
-        log(f"  {'─' * 68}")
+        log(f"  {'─' * 62}")
         for coin, action in close_items:
             side = "LONG" if action == "CLOSE_LONG" else "SHORT"
             symbol = coin_to_exchange_symbol(coin, exchange)
             symbol_str = symbol if symbol else f"{coin} (未対応)"
             log(f"  {'CLOSE':<14s} {symbol_str:<22s} {side:<7s}")
 
-    log(f"  {'─' * 68}")
+    log(f"  {'─' * 62}")
     n_new = sum(1 for a in changes.values() if a.startswith("NEW"))
     n_keep = sum(1 for a in changes.values() if a.startswith("KEEP"))
     n_close = sum(1 for a in changes.values() if a.startswith("CLOSE"))
-    log(f"  NEW: {n_new} | KEEP: {n_keep} | CLOSE: {n_close} | SL: {TRADE_STOP_LOSS_PCT:.0%} | 1pos: {position_usdt:.0f} USDT")
-    log("=" * 72)
+    log(f"  NEW: {n_new} | KEEP: {n_keep} | CLOSE: {n_close} | 1pos: {position_usdt:.0f} USDT")
+    log("=" * 66)
     log("")
 
 

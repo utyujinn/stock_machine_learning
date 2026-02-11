@@ -71,3 +71,13 @@
 {"action": "open", "symbol": "COTI/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "COTI-USD", "logged_at": "2026-02-10T23:53:27.099893+00:00"}
 {"action": "open", "symbol": "KNC/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "KNC-USD", "logged_at": "2026-02-10T23:53:27.556411+00:00"}
 {"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "BAT-USD", "logged_at": "2026-02-10T23:53:28.003109+00:00"}
+{"action": "open", "symbol": "SKL/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "SKL-USD", "logged_at": "2026-02-11T00:33:43.504874+00:00"}
+{"action": "open", "symbol": "ALGO/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "ALGO-USD", "logged_at": "2026-02-11T00:33:43.962997+00:00"}
+{"action": "open", "symbol": "COMP/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "COMP-USD", "logged_at": "2026-02-11T00:33:44.404279+00:00"}
+{"action": "open", "symbol": "DOGE/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "DOGE-USD", "logged_at": "2026-02-11T00:33:44.846823+00:00"}
+{"action": "open", "symbol": "GALA/USDT:USDT", "side": "long", "error": "最小注文額不足 (5.0 USDT)", "coin": "GALA-USD", "logged_at": "2026-02-11T00:33:45.299958+00:00"}
+{"action": "open", "symbol": "PENDLE/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "PENDLE-USD", "logged_at": "2026-02-11T00:33:45.756517+00:00"}
+{"action": "open", "symbol": "COTI/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "COTI-USD", "logged_at": "2026-02-11T00:33:46.215641+00:00"}
+{"action": "open", "symbol": "KNC/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "KNC-USD", "logged_at": "2026-02-11T00:33:46.651803+00:00"}
+{"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "BAT-USD", "logged_at": "2026-02-11T00:33:47.106246+00:00"}
+{"action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "error": "最小注文額不足 (5.0 USDT)", "coin": "FLOW-USD", "logged_at": "2026-02-11T00:33:47.547081+00:00"}
