@@ -11,3 +11,6 @@ wheels/
 
 # Secrets
 .env
+
+# Cache (data, models, trade logs)
+cache/
