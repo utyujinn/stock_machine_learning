@@ -21,6 +21,7 @@ import signal
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
 sys.stdout.reconfigure(line_buffering=True)
@@ -383,6 +384,43 @@ def ensure_stop_losses(
             coin = exchange_symbol_to_coin(symbol)
             log(f"  SLトリガー不足検出: {coin} {side.upper()} → 再設定")
             place_stop_loss(exchange, symbol, side, entry_price, contracts, dry_run)
+
+
+def cancel_all_open_orders(exchange: ccxt.bitget, dry_run: bool) -> int:
+    """全シンボルの未約定注文をキャンセル (起動時クリーンアップ).
+
+    クラッシュ後に残った指値注文やトリガー注文を一掃する。
+    """
+    if dry_run:
+        return 0
+
+    cancelled = 0
+    try:
+        orders = exchange.fetch_open_orders(params={"productType": "USDT-FUTURES"})
+        for order in orders:
+            try:
+                exchange.cancel_order(order["id"], order["symbol"])
+                cancelled += 1
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # トリガー注文 (SL等) もクリーンアップ
+    try:
+        trigger_orders = exchange.fetch_open_orders(
+            params={"productType": "USDT-FUTURES", "stop": True},
+        )
+        for order in trigger_orders:
+            try:
+                exchange.cancel_order(order["id"], order["symbol"], params={"stop": True})
+                cancelled += 1
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    return cancelled
 
 
 def calculate_position_usdt(capital: float, k: int, leverage: int) -> float:
@@ -810,6 +848,41 @@ def print_order_sheet(
 # ポジション同期
 # ============================================================
 
+def _exec_close(exchange, coin, action, dry_run):
+    """1銘柄のクローズ処理 (並列実行用)."""
+    symbol = coin_to_exchange_symbol(coin, exchange)
+    if not symbol:
+        log(f"  {coin} → Bitget未対応 - スキップ")
+        return None
+    cancel_trigger_orders(exchange, symbol, dry_run)
+    side = "long" if action == "CLOSE_LONG" else "short"
+    result = close_position(exchange, symbol, side, dry_run)
+    if result:
+        result["coin"] = coin
+    return result
+
+
+def _exec_open(exchange, coin, action, position_usdt, price, dry_run):
+    """1銘柄のオープン処理 (並列実行用)."""
+    symbol = coin_to_exchange_symbol(coin, exchange)
+    if not symbol:
+        log(f"  {coin} → Bitget未対応 - スキップ")
+        return None
+    if price <= 0:
+        log(f"  {coin} → 価格不明 - スキップ")
+        return None
+    side = "long" if action == "NEW_LONG" else "short"
+    result = open_position(exchange, symbol, side, position_usdt, price, dry_run)
+    if result:
+        result["coin"] = coin
+        if "error" not in result and TRADE_STOP_LOSS_PCT > 0:
+            fill_price = result.get("price", price)
+            contracts = result.get("amount", 0)
+            if contracts > 0 and fill_price > 0:
+                place_stop_loss(exchange, symbol, side, fill_price, contracts, dry_run)
+    return result
+
+
 def sync_positions(
     exchange: ccxt.bitget,
     new_longs: list[str],
@@ -818,10 +891,10 @@ def sync_positions(
     prices: dict[str, float],
     dry_run: bool,
 ) -> list[dict]:
-    """推奨ポジションと実際のポジションを同期.
+    """推奨ポジションと実際のポジションを同期 (並列実行).
 
-    1. CLOSEアクション → 決済
-    2. NEWアクション → 新規ポジション
+    1. CLOSEアクション → 全銘柄同時に決済
+    2. NEWアクション → 全銘柄同時に新規ポジション
     3. KEEPアクション → 何もしない
     """
     trades = []
@@ -831,57 +904,44 @@ def sync_positions(
 
     log(f"1ポジション: {position_usdt:.1f} USDT (資金{TRADE_TOTAL_CAPITAL_USDT} / {2*PORTFOLIO_K}ポジション × {TRADE_LEVERAGE}xレバ)")
 
-    # Step 1: クローズ (先にSLトリガーをキャンセル → ポジション決済)
-    for coin, action in changes.items():
-        if not action.startswith("CLOSE"):
-            continue
-        symbol = coin_to_exchange_symbol(coin, exchange)
-        if not symbol:
-            log(f"  {coin} → Bitget未対応 - スキップ")
-            continue
+    # Step 1: クローズ (全銘柄同時)
+    close_items = [(c, a) for c, a in changes.items() if a.startswith("CLOSE")]
+    if close_items:
+        log(f"CLOSE {len(close_items)}銘柄を同時決済中...")
+        with ThreadPoolExecutor(max_workers=len(close_items)) as pool:
+            futures = {
+                pool.submit(_exec_close, exchange, coin, action, dry_run): coin
+                for coin, action in close_items
+            }
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result:
+                        trades.append(result)
+                        log_trade(result)
+                except Exception as e:
+                    log(f"  {futures[future]} クローズ例外: {e}")
 
-        # SLトリガー注文をキャンセル (通常決済と競合しないように)
-        cancel_trigger_orders(exchange, symbol, dry_run)
-
-        side = "long" if action == "CLOSE_LONG" else "short"
-        result = close_position(exchange, symbol, side, dry_run)
-        if result:
-            result["coin"] = coin
-            trades.append(result)
-            log_trade(result)
-            if not dry_run:
-                time.sleep(1)  # レート制限対策
-
-    # Step 2: 新規ポジション
-    for coin, action in changes.items():
-        if not action.startswith("NEW"):
-            continue
-        symbol = coin_to_exchange_symbol(coin, exchange)
-        if not symbol:
-            log(f"  {coin} → Bitget未対応 - スキップ")
-            continue
-
-        price = prices.get(coin, 0)
-        if price <= 0:
-            log(f"  {coin} → 価格不明 - スキップ")
-            continue
-
-        side = "long" if action == "NEW_LONG" else "short"
-        result = open_position(exchange, symbol, side, position_usdt, price, dry_run)
-        if result:
-            result["coin"] = coin
-            trades.append(result)
-            log_trade(result)
-
-            # ポジション開設成功 → SLトリガー注文を配置
-            if "error" not in result:
-                fill_price = result.get("price", price)
-                contracts = result.get("amount", 0)
-                if contracts > 0 and fill_price > 0:
-                    place_stop_loss(exchange, symbol, side, fill_price, contracts, dry_run)
-
-            if not dry_run:
-                time.sleep(1)  # レート制限対策
+    # Step 2: 新規ポジション (全銘柄同時)
+    new_items = [(c, a) for c, a in changes.items() if a.startswith("NEW")]
+    if new_items:
+        log(f"NEW {len(new_items)}銘柄を同時発注中...")
+        with ThreadPoolExecutor(max_workers=len(new_items)) as pool:
+            futures = {
+                pool.submit(
+                    _exec_open, exchange, coin, action,
+                    position_usdt, prices.get(coin, 0), dry_run,
+                ): coin
+                for coin, action in new_items
+            }
+            for future in as_completed(futures):
+                try:
+                    result = future.result()
+                    if result:
+                        trades.append(result)
+                        log_trade(result)
+                except Exception as e:
+                    log(f"  {futures[future]} オープン例外: {e}")
 
     # Step 3: KEEP → ログのみ
     for coin, action in changes.items():
@@ -1008,6 +1068,11 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
     mode = "DRY-RUN" if dry_run else "LIVE"
     log(f"===== LSTM Auto Trader ({mode}) =====")
     log(f"資金: {TRADE_TOTAL_CAPITAL_USDT} USDT | レバレッジ: {TRADE_LEVERAGE}x | k={PORTFOLIO_K}")
+
+    # --- 0. 未約定注文クリーンアップ (クラッシュ復帰対策) ---
+    n_cancelled = cancel_all_open_orders(exchange, dry_run)
+    if n_cancelled > 0:
+        log(f"未約定注文クリーンアップ: {n_cancelled}件キャンセル")
 
     # --- A. モデル読込 ---
     model_path = os.path.join(MODELS_DIR, "4h")
