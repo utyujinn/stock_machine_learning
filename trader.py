@@ -159,6 +159,36 @@ _SYMBOL_MAP = {
 # 逆マッピング (Bitget → Binance)
 _SYMBOL_MAP_REV = {v: k for k, v in _SYMBOL_MAP.items()}
 
+def setup_isolated_margin(exchange, symbol, leverage):
+    """銘柄を分離マージンに変更し、レバレッジを設定する"""
+    try:
+        # 1. 現在のマージンモードとレバレッジを確認（無駄なリクエストを避けるため）
+        # Bitgetのポジションモード/マージン設定は銘柄ごとに保持される
+        params = {"symbol": symbol}
+        # 実際には、設定済みの場合はエラーを投げる取引所が多いため、try-exceptで囲むのが安全
+        
+        log(f"  設定確認中: {symbol}")
+        
+        # 2. 分離マージン (isolated) に設定
+        # 注意: ポジションがある状態では変更できないため、エラーハンドリングが必要
+        try:
+            exchange.set_margin_mode('isolated', symbol)
+            log(f"    -> 分離マージンに変更成功")
+        except Exception as e:
+            if "already" in str(e).lower() or "not allowed" in str(e).lower():
+                log(f"    -> 分離マージン設定済み、または変更不可（既存ポジ有）")
+            else:
+                log(f"    -> 分離マージン設定スキップ: {e}")
+
+        # 3. レバレッジを設定
+        try:
+            exchange.set_leverage(leverage, symbol)
+            log(f"    -> レバレッジを {leverage}x に設定完了")
+        except Exception as e:
+            log(f"    -> レバレッジ設定スキップ: {e}")
+
+    except Exception as e:
+        log(f"  {symbol} の設定中にエラーが発生しました: {e}")
 
 def coin_to_exchange_symbol(coin_id: str, exchange: ccxt.bitget) -> str | None:
     """advisor銘柄名 → Bitget Futuresシンボルに変換.
@@ -769,6 +799,12 @@ def open_position(
             exchange.set_leverage(TRADE_LEVERAGE, symbol)
         except Exception:
             pass
+        
+        if not dry_run:
+            # 分離マージンに変更
+            setup_isolated_margin(exchange, symbol, TRADE_LEVERAGE)
+        else:
+            log(f"  [DRY-RUN] {symbol} を ISOLATED モード / {TRADE_LEVERAGE}x レバレッジに設定想定")
 
         order_side = "buy" if side == "long" else "sell"
         is_buy = order_side == "buy"
@@ -1496,9 +1532,9 @@ Ctrl+C ×2 で強制停止
             now = datetime.now(timezone.utc)
             next_4h_hour = ((now.hour // TRADE_INTERVAL_HOURS) + 1) * TRADE_INTERVAL_HOURS
             if next_4h_hour >= 24:
-                next_run = (now + timedelta(days=1)).replace(hour=0, minute=5, second=0, microsecond=0)
+                next_run = (now + timedelta(days=1)).replace(hour=0, minute=0, second=5, microsecond=0)
             else:
-                next_run = now.replace(hour=next_4h_hour, minute=5, second=0, microsecond=0)
+                next_run = now.replace(hour=next_4h_hour, minute=0, second=5, microsecond=0)
 
             if next_run <= now:
                 next_run += timedelta(hours=TRADE_INTERVAL_HOURS)
