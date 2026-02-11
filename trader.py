@@ -38,6 +38,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import (
     DATA_DIR,
     PORTFOLIO_K,
+    RETRAIN_INTERVAL_DAYS,
+    RETRAIN_UTC_HOUR,
     TRADE_INTERVAL_HOURS,
     TRADE_LEVERAGE,
     TRADE_LIMIT_OFFSET_PCT,
@@ -53,6 +55,7 @@ from advisor import (
     dynamic_rebalance,
     fetch_recent_4h,
     load_positions,
+    retrain_models,
     save_positions,
 )
 from models.lstm_model import ensemble_predict_ranks, load_ensemble
@@ -64,6 +67,23 @@ POSITIONS_PATH = os.path.join(DATA_DIR, "positions_4h.json")
 
 # グレースフル停止用フラグ
 _shutdown = False
+
+
+def _should_retrain() -> bool:
+    """モデルの再訓練が必要か判定 (trained_at が RETRAIN_INTERVAL_DAYS 日以上前)."""
+    config_path = os.path.join(MODELS_DIR, "4h", "config.json")
+    if not os.path.exists(config_path):
+        return True
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+        trained_at = datetime.fromisoformat(config["trained_at"])
+        if trained_at.tzinfo is None:
+            trained_at = trained_at.replace(tzinfo=timezone.utc)
+        age = datetime.now(timezone.utc) - trained_at
+        return age.days >= RETRAIN_INTERVAL_DAYS
+    except Exception:
+        return True
 
 
 def _handle_signal(signum, frame):
@@ -558,6 +578,8 @@ def _execute_limit_with_retry(
                 return {"error": f"残高不足: {symbol}"}
             if "40774" in err_str or "unilateral" in err_str.lower():
                 return {"error": f"ポジションモードエラー: {symbol}"}
+            if "22002" in err_str:
+                return {"error": f"ポジションなし: {symbol}", "code": "22002"}
             # レート制限 → 少し待ってリトライ
             if "busy" in err_str.lower() or "frequent" in err_str.lower():
                 time.sleep(3)
@@ -646,8 +668,34 @@ def close_position(
             result["size"] = pos_size
             return result
 
-        # 指値全回失敗 → フラッシュクローズにフォールバック
-        log(f"    指値全回失敗 → フラッシュクローズにフォールバック")
+        # 22002 (ポジションなし) → 既に決済済みとして成功扱い
+        if result and result.get("code") == "22002":
+            log(f"    ポジション既に決済済み → スキップ")
+            return {
+                "action": "close", "symbol": symbol, "side": side,
+                "size": pos_size, "type": "already_closed",
+            }
+
+        # 指値全回失敗 → ポジション再確認してからフラッシュクローズ
+        log(f"    指値全回失敗 → ポジション再確認中...")
+        try:
+            positions = exchange.fetch_positions([symbol])
+            still_open = any(
+                p["symbol"] == symbol and p.get("side") == side
+                and float(p.get("contracts", 0) or 0) > 0
+                for p in positions
+            )
+        except Exception:
+            still_open = True  # 確認できない場合は安全側でフォールバック
+
+        if not still_open:
+            log(f"    ポジション既に決済済み → スキップ")
+            return {
+                "action": "close", "symbol": symbol, "side": side,
+                "size": pos_size, "type": "already_closed",
+            }
+
+        log(f"    フラッシュクローズにフォールバック")
         try:
             fb = exchange.close_position(symbol, side=side)
             return {
@@ -1426,6 +1474,16 @@ Ctrl+C ×2 で強制停止
             log("LIVEモード: 実際の注文が送信されます!")
 
         while not _shutdown:
+            # --- 定期再訓練チェック ---
+            now_utc = datetime.now(timezone.utc)
+            if now_utc.hour == RETRAIN_UTC_HOUR and _should_retrain():
+                log(f"定期再訓練を開始 (前回から{RETRAIN_INTERVAL_DAYS}日以上経過)...")
+                try:
+                    retrain_models("4h")
+                    log("再訓練完了 → 新モデルで推論を開始")
+                except Exception as e:
+                    log(f"再訓練エラー (既存モデルで続行): {e}")
+
             try:
                 run_once(dry_run, exchange)
             except Exception as e:
