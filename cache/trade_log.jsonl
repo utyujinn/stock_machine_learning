@@ -160,6 +160,7 @@
 {"action": "open", "symbol": "COTI/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.011975985, "amount": 669.0, "type": "limit", "dry_run": true, "coin": "COTI-USD", "logged_at": "2026-02-11T00:43:00.672470+00:00"}
 {"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.1342671, "amount": 59.7, "type": "limit", "dry_run": true, "coin": "BAT-USD", "logged_at": "2026-02-11T00:43:01.120483+00:00"}
 {"action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.051355664999999995, "amount": 155.9, "type": "limit", "dry_run": true, "coin": "FLOW-USD", "logged_at": "2026-02-11T00:43:01.571576+00:00"}
+<<<<<<< Updated upstream
 =======
 {"action": "open", "symbol": "COMP/USDT:USDT", "side": "long", "usdt": 8.0, "price": 16.251870000000004, "amount": 0.5, "type": "limit", "dry_run": true, "coin": "COMP-USD", "logged_at": "2026-02-11T00:36:17.605446+00:00"}
 {"action": "open", "symbol": "SKL/USDT:USDT", "side": "long", "usdt": 8.0, "price": 0.006286855, "amount": 1272.0, "type": "limit", "dry_run": true, "coin": "SKL-USD", "logged_at": "2026-02-11T00:36:18.064442+00:00"}
@@ -193,4 +194,26 @@
 {"action": "open", "symbol": "PENDLE/USDT:USDT", "side": "short", "usdt": 8.0, "price": 1.1467731, "amount": 7.0, "type": "limit", "dry_run": true, "coin": "PENDLE-USD", "logged_at": "2026-02-11T00:53:11.369607+00:00"}
 {"action": "open", "symbol": "KNC/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.1502751, "amount": 53.300000000000004, "type": "limit", "dry_run": true, "coin": "KNC-USD", "logged_at": "2026-02-11T01:03:47.913997+00:00"}
 {"action": "open", "symbol": "COTI/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.01204602, "amount": 665.0, "type": "limit", "dry_run": true, "coin": "COTI-USD", "logged_at": "2026-02-11T01:03:47.915489+00:00"}
+>>>>>>> Stashed changes
+=======
+{"action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.13476734999999998, "amount": 59.400000000000006, "type": "limit", "dry_run": true, "coin": "BAT-USD", "logged_at": "2026-02-11T00:58:12.696045+00:00"}
+{"action": "open", "symbol": "VET/USDT:USDT", "side": "long", "usdt": 8.0, "price": 0.007707144500000001, "amount": 1038.0, "type": "limit", "dry_run": true, "coin": "VET-USD", "logged_at": "2026-02-11T00:58:13.051669+00:00"}
+{"action": "open", "symbol": "SKL/USDT:USDT", "side": "long", "usdt": 8.0, "price": 0.00627686, "amount": 1274.0, "type": "limit", "dry_run": true, "coin": "SKL-USD", "logged_at": "2026-02-11T00:58:13.231907+00:00"}
+{"action": "open", "symbol": "KNC/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.15037514999999999, "amount": 53.300000000000004, "type": "limit", "dry_run": true, "coin": "KNC-USD", "logged_at": "2026-02-11T00:58:13.236627+00:00"}
+{"action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.051735855, "amount": 154.8, "type": "limit", "dry_run": true, "coin": "FLOW-USD", "logged_at": "2026-02-11T00:58:13.237086+00:00"}
+{"action": "open", "symbol": "RVN/USDT:USDT", "side": "long", "usdt": 8.0, "price": 0.005639179, "amount": 1418.0, "type": "limit", "dry_run": true, "coin": "RVN-USD", "logged_at": "2026-02-11T00:58:13.237377+00:00"}
+{"action": "open", "symbol": "COTI/USDT:USDT", "side": "short", "usdt": 8.0, "price": 0.012066029999999998, "amount": 664.0, "type": "limit", "dry_run": true, "coin": "COTI-USD", "logged_at": "2026-02-11T00:58:13.237642+00:00"}
+{"action": "open", "symbol": "COMP/USDT:USDT", "side": "long", "usdt": 8.0, "price": 16.241875, "amount": 0.5, "type": "limit", "dry_run": true, "coin": "COMP-USD", "logged_at": "2026-02-11T00:58:13.237937+00:00"}
+{"action": "open", "symbol": "PENDLE/USDT:USDT", "side": "short", "usdt": 8.0, "price": 1.1457726, "amount": 7.0, "type": "limit", "dry_run": true, "coin": "PENDLE-USD", "logged_at": "2026-02-11T00:58:13.247075+00:00"}
+{"action": "open", "symbol": "XTZ/USDT:USDT", "side": "long", "usdt": 8.0, "price": 0.39989995000000006, "amount": 20.0, "type": "limit", "dry_run": true, "coin": "XTZ-USD", "logged_at": "2026-02-11T00:58:13.248683+00:00"}
+{"price": 16.24, "order_id": "1405283235243106305", "attempt": 1, "type": "limit", "action": "open", "symbol": "COMP/USDT:USDT", "side": "long", "usdt": 8.0, "amount": 0.5, "coin": "COMP-USD", "logged_at": "2026-02-11T00:59:16.733461+00:00"}
+{"price": 1.823, "order_id": "1405283236815970309", "attempt": 1, "type": "limit", "action": "open", "symbol": "AR/USDT:USDT", "side": "long", "usdt": 8.0, "amount": 4.4, "coin": "AR-USD", "logged_at": "2026-02-11T00:59:17.191790+00:00"}
+{"price": 1.1452, "order_id": "1405283368030576642", "attempt": 2, "type": "limit", "action": "open", "symbol": "PENDLE/USDT:USDT", "side": "short", "usdt": 8.0, "amount": 7.0, "coin": "PENDLE-USD", "logged_at": "2026-02-11T00:59:50.417535+00:00"}
+{"price": 0.00628, "order_id": "1405283365899870209", "attempt": 2, "type": "limit", "action": "open", "symbol": "SKL/USDT:USDT", "side": "long", "usdt": 8.0, "amount": 1274.0, "coin": "SKL-USD", "logged_at": "2026-02-11T00:59:58.032092+00:00"}
+{"price": 153.25, "order_id": "1405283368408064007", "attempt": 2, "type": "limit", "action": "open", "symbol": "TAO/USDT:USDT", "side": "long", "usdt": 8.0, "amount": 0.053, "coin": "TAO-USD", "logged_at": "2026-02-11T01:00:10.847313+00:00"}
+{"price": 0.3998, "order_id": "1405283496061706241", "attempt": 3, "type": "limit", "action": "open", "symbol": "XTZ/USDT:USDT", "side": "long", "usdt": 8.0, "amount": 20.0, "coin": "XTZ-USD", "logged_at": "2026-02-11T01:00:18.923186+00:00"}
+{"price": 0.0517, "order_id": "1405283496917344257", "attempt": 3, "type": "limit", "action": "open", "symbol": "FLOW/USDT:USDT", "side": "short", "usdt": 8.0, "amount": 154.8, "coin": "FLOW-USD", "logged_at": "2026-02-11T01:00:19.118621+00:00"}
+{"price": 0.1343, "order_id": "1405283626336788481", "attempt": 4, "type": "limit", "action": "open", "symbol": "BAT/USDT:USDT", "side": "short", "usdt": 8.0, "amount": 59.400000000000006, "coin": "BAT-USD", "logged_at": "2026-02-11T01:00:58.277777+00:00"}
+{"error": "全4回の指値が未約定", "action": "open", "symbol": "KNC/USDT:USDT", "side": "short", "usdt": 8.0, "amount": 53.2, "coin": "KNC-USD", "logged_at": "2026-02-11T01:01:19.568687+00:00"}
+{"error": "全4回の指値が未約定", "action": "open", "symbol": "COTI/USDT:USDT", "side": "short", "usdt": 8.0, "amount": 664.0, "coin": "COTI-USD", "logged_at": "2026-02-11T01:01:19.659437+00:00"}
 >>>>>>> Stashed changes
