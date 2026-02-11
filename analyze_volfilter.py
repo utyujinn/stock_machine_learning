@@ -243,12 +243,10 @@ def main():
     configs = [
         {"label": "ベースライン", "sl": None, "vol": None},
         {"label": "SL=10%のみ", "sl": 0.10, "vol": None},
+        {"label": "SL=30%のみ", "sl": 0.30, "vol": None},
         {"label": "Vol×2.0のみ", "sl": None, "vol": 2.0},
-        {"label": "Vol×2.5のみ", "sl": None, "vol": 2.5},
-        {"label": "Vol×3.0のみ", "sl": None, "vol": 3.0},
         {"label": "SL10%+Vol×2.0", "sl": 0.10, "vol": 2.0},
-        {"label": "SL10%+Vol×2.5", "sl": 0.10, "vol": 2.5},
-        {"label": "SL10%+Vol×3.0", "sl": 0.10, "vol": 3.0},
+        {"label": "SL30%+Vol×2.0", "sl": 0.30, "vol": 2.0},
     ]
 
     # SP別結果格納
@@ -303,10 +301,11 @@ def main():
     ax = axes[0]
     plot_configs = [
         ("ベースライン", "gray", "--"),
-        ("SL=10%のみ", "blue", "-"),
-        ("SL10%+Vol×2.0", "red", "-"),
-        ("SL10%+Vol×2.5", "green", "-"),
-        ("SL10%+Vol×3.0", "orange", "-"),
+        ("SL=10%のみ", "blue", "--"),
+        ("SL=30%のみ", "cyan", "--"),
+        ("Vol×2.0のみ", "green", "-"),
+        ("SL10%+Vol×2.0", "orange", "-"),
+        ("SL30%+Vol×2.0", "red", "-"),
     ]
     for label, color, ls in plot_configs:
         sp3_ret = results[label]["sp_results"][2]["returns"]
