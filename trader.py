@@ -760,12 +760,33 @@ def open_position(
             exchange, symbol, order_side, amount, price,
             is_buy=is_buy, params={"tradeSide": "open"}, label=label,
         )
-        result["action"] = "open"
-        result["symbol"] = symbol
-        result["side"] = side
-        result["usdt"] = usdt_amount
-        result["amount"] = amount
-        return result
+
+        if result and "error" not in result:
+            result["action"] = "open"
+            result["symbol"] = symbol
+            result["side"] = side
+            result["usdt"] = usdt_amount
+            result["amount"] = amount
+            return result
+
+        # 指値全回失敗 → 成行フォールバック
+        log(f"    指値全回失敗 → 成行にフォールバック")
+        try:
+            order = exchange.create_order(
+                symbol, "market", order_side, amount,
+                params={"tradeSide": "open"},
+            )
+            fill_price = order.get("average") or order.get("price") or price
+            log(f"    成行約定 @ ${fill_price:.4f}")
+            return {
+                "action": "open", "symbol": symbol, "side": side,
+                "usdt": usdt_amount, "price": fill_price, "amount": amount,
+                "order_id": order.get("id", ""),
+                "type": "market_fallback",
+            }
+        except Exception as e2:
+            log(f"    成行も失敗: {e2}")
+            return {"action": "open", "symbol": symbol, "side": side, "error": str(e2)}
 
     except Exception as e:
         log(f"  NEW {side.upper()} {symbol} 失敗: {e}")
