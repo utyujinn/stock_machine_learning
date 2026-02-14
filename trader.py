@@ -642,17 +642,26 @@ def close_position(
 ) -> dict | None:
     """既存ポジションを指値で決済 (全回失敗時はフラッシュクローズ)."""
     try:
-        # ポジションサイズを取得
+        # ポジションサイズとマージンモードを取得
         positions = exchange.fetch_positions([symbol])
         pos_size = 0
+        pos_margin_mode = None
         for p in positions:
             if p["symbol"] == symbol and p.get("side") == side and float(p.get("contracts", 0) or 0) > 0:
                 pos_size = float(p["contracts"])
+                pos_margin_mode = p.get("marginMode")  # "cross" or "isolated"
                 break
 
         if pos_size == 0:
             log(f"  {symbol} ポジションなし - スキップ")
             return None
+
+        # ポジションのマージンモードに合わせる (cross/isolated 不一致を防止)
+        if pos_margin_mode:
+            try:
+                exchange.set_margin_mode(pos_margin_mode, symbol)
+            except Exception:
+                pass
 
         order_side = "sell" if side == "long" else "buy"
         is_buy = order_side == "buy"
@@ -791,17 +800,7 @@ def open_position(
     """新規ポジションを開設 (指値リトライ、成行は使わない)."""
     try:
         # マージンモード・レバレッジ設定
-        try:
-            exchange.set_margin_mode("cross", symbol)
-        except Exception:
-            pass
-        try:
-            exchange.set_leverage(TRADE_LEVERAGE, symbol)
-        except Exception:
-            pass
-        
         if not dry_run:
-            # 分離マージンに変更
             setup_isolated_margin(exchange, symbol, TRADE_LEVERAGE)
         else:
             log(f"  [DRY-RUN] {symbol} を ISOLATED モード / {TRADE_LEVERAGE}x レバレッジに設定想定")
@@ -1189,11 +1188,14 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
     models, config = load_ensemble(model_path)
     train_mean = config["train_mean"]
     train_std = config["train_std"]
+    saved_tickers = config.get("tickers_binance")
     log(f"モデル: SP{config.get('sp_id', 3)} (units={config['best_units']}, ensemble×{len(models)})")
+    if saved_tickers:
+        log(f"銘柄リスト: {len(saved_tickers)} 銘柄 (モデル保存時)")
 
     # --- B. 最新データ取得 ---
     log("最新4hデータ取得中...")
-    price_df = fetch_recent_4h()
+    price_df = fetch_recent_4h(tickers=saved_tickers)
 
     # --- C. 特徴量生成 ---
     log("特徴量生成中...")

@@ -82,6 +82,9 @@ TRADE_STOP_LOSS_PCT = 0             # ストップロス無効 (ボラフィル�
 VOL_FILTER_MULTIPLIER = 2.0         # 中央値の何倍でフィルタ (None=無効)
 VOL_FILTER_LOOKBACK = 18            # ボラ計算期間 (4h足本数, 18=3日分)
 
+# --- 動的ティッカー選定 ---
+DYNAMIC_TICKER_MIN_VOLUME_USD = 1_000_000  # 24h最低出来高 (USDT)
+
 # --- 定期再訓練 ---
 RETRAIN_INTERVAL_DAYS = 7           # 再訓練間隔 (日)
 RETRAIN_UTC_HOUR = 0                # 再訓練実行時刻 (UTC, 0=JST 9:00)
