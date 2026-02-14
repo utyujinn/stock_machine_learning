@@ -5,14 +5,16 @@
   B) 5 bps (スリッページのみ) + 動的リバランス
   C) 15 bps フルターンオーバー (前回の4h実験、参考)
 
---dynamic フラグ:
-  Bitget出来高+Binance上場で動的選定した銘柄でバックテスト。
-  固定リストとの比較に使用。
+--dynamic フラグ (ポイントインタイム方式):
+  固定リスト + 現在の動的リストの和集合を候補とし、
+  各SPの訓練開始時点での Binance 出来高でフィルタ。
+  ルックアヘッドバイアスを排除した公正な比較。
 """
 
 import argparse
 import os
 import sys
+from datetime import datetime, timezone
 
 sys.stdout.reconfigure(line_buffering=True)
 
@@ -26,9 +28,15 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import PORTFOLIO_K, STUDY_PERIODS, PERIODS_PER_YEAR_4H, SEQUENCE_LENGTH
+from config import (
+    DYNAMIC_TICKER_MIN_VOLUME_USD,
+    PERIODS_PER_YEAR_4H,
+    PORTFOLIO_K,
+    SEQUENCE_LENGTH,
+    STUDY_PERIODS,
+)
 from data.collector_4h import collect_4h_data
-from data.preprocessor import prepare_all_study_periods
+from data.preprocessor import prepare_all_study_periods, prepare_study_period
 from models.lstm_model import (
     ensemble_predict_ranks,
     select_best_units,
@@ -154,57 +162,145 @@ def plot_comparison(scenario_results: dict, output_dir: str):
     print(f"\n比較グラフ保存: {fig_path}")
 
 
-def collect_dynamic_data() -> tuple[pd.DataFrame, list[str]]:
-    """動的ティッカーで4hヒストリカルデータを収集.
+# ============================================================
+# ポイントインタイム動的銘柄選定
+# ============================================================
+
+def collect_pointintime_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """候補全銘柄の4h価格+出来高データを収集.
+
+    固定リスト + 現在の動的リストの和集合をユニバースとし、
+    価格と出来高を同時に取得する。
 
     Returns:
-        (price_df, tickers): 価格DataFrame と 使用したティッカーリスト
+        (price_df, volume_df)
     """
+    from data.collector_4h import BINANCE_TICKERS, _ticker_to_column, _fetch_klines
     from data.ticker_discovery import get_dynamic_tickers
-    from advisor import fetch_recent_4h
 
+    # 候補 = 固定リスト ∪ 動的リスト
     print("\n  動的ティッカー選定中...")
-    dynamic_tickers = get_dynamic_tickers()
+    dynamic = get_dynamic_tickers()
+    all_candidates = sorted(set(BINANCE_TICKERS) | set(dynamic))
+    print(f"  候補銘柄: {len(all_candidates)} (固定{len(BINANCE_TICKERS)} ∪ 動的{len(dynamic)})")
 
-    # 全Study Periodをカバーするキャンドル数を計算
+    # 全SPをカバーする期間を計算 (余裕をもって)
     earliest = min(sp["train"][0] for sp in STUDY_PERIODS)
-    from datetime import datetime, timezone
     earliest_dt = datetime.strptime(earliest, "%Y-%m-%d")
     now_dt = datetime.now(timezone.utc)
-    days_needed = (now_dt - earliest_dt.replace(tzinfo=timezone.utc)).days + 30 + SEQUENCE_LENGTH
-    n_candles = days_needed * 6 + 100  # 4h足 = 1日6本
+    days_needed = (now_dt - earliest_dt.replace(tzinfo=timezone.utc)).days + 60 + SEQUENCE_LENGTH
+    n_candles = days_needed * 6 + 100
 
-    print(f"\n  ヒストリカルデータ取得 ({n_candles} 本 × {len(dynamic_tickers)} 銘柄)...")
-    price_df = fetch_recent_4h(n_candles=n_candles, tickers=dynamic_tickers)
-    return price_df, dynamic_tickers
+    now_ms = int(now_dt.timestamp() * 1000)
+    start_ms = now_ms - n_candles * 4 * 3600 * 1000
+
+    print(f"  ヒストリカルデータ取得 ({n_candles}本 × {len(all_candidates)}銘柄)...")
+
+    price_data = {}
+    volume_data = {}
+    failed = []
+
+    for i, ticker in enumerate(all_candidates):
+        col_name = _ticker_to_column(ticker)
+        data = _fetch_klines(ticker, "4h", start_ms, now_ms)
+
+        if len(data) < 10:
+            failed.append(ticker)
+            continue
+
+        timestamps = [
+            datetime.fromtimestamp(k[0] / 1000, tz=timezone.utc).replace(tzinfo=None)
+            for k in data
+        ]
+        closes = [float(k[4]) for k in data]
+        volumes = [float(k[7]) for k in data]  # quote volume (USDT)
+
+        price_data[col_name] = pd.Series(closes, index=timestamps)
+        volume_data[col_name] = pd.Series(volumes, index=timestamps)
+
+        if (i + 1) % 20 == 0:
+            print(f"    {i + 1}/{len(all_candidates)} 銘柄取得完了")
+
+    if failed:
+        print(f"  {len(failed)} 銘柄が取得失敗")
+
+    price_df = pd.DataFrame(price_data).sort_index()
+    price_df = price_df[~price_df.index.duplicated(keep="first")]
+    volume_df = pd.DataFrame(volume_data).sort_index()
+    volume_df = volume_df[~volume_df.index.duplicated(keep="first")]
+
+    print(f"  {len(price_df.columns)} 銘柄 × {len(price_df)} 本取得完了")
+    return price_df, volume_df
+
+
+def filter_by_volume_at_date(
+    volume_df: pd.DataFrame,
+    cutoff_date: str,
+    min_daily_volume_usd: float,
+    lookback_candles: int = 180,
+) -> list[str]:
+    """指定日以前の出来高で銘柄をフィルタ.
+
+    Args:
+        volume_df: 4h出来高DataFrame (USDT建て)
+        cutoff_date: この日以前のデータのみ使用 (ルックアヘッド防止)
+        min_daily_volume_usd: 日次最低出来高 (USDT)
+        lookback_candles: 出来高計算期間 (4h足本数, 180=30日)
+
+    Returns:
+        フィルタ通過したカラム名リスト
+    """
+    window = volume_df.loc[:cutoff_date].iloc[-lookback_candles:]
+    if len(window) < 6:
+        return list(volume_df.columns)
+
+    # 4h足の平均出来高 × 6 = 日次平均出来高
+    avg_4h = window.mean()
+    daily_avg = avg_4h * 6
+    liquid = daily_avg[daily_avg >= min_daily_volume_usd].dropna().index.tolist()
+    return liquid
 
 
 def main():
     parser = argparse.ArgumentParser(description="4h 動的リバランス実験")
     parser.add_argument(
         "--dynamic", action="store_true",
-        help="Bitget出来高+Binance上場で動的選定した銘柄を使用",
+        help="ポイントインタイム方式: 各SP開始時の出来高で銘柄を動的選定",
     )
     args = parser.parse_args()
 
-    ticker_mode = "動的" if args.dynamic else "固定"
+    ticker_mode = "ポイントインタイム動的" if args.dynamic else "固定"
     print("=" * 60)
     print(f"  4時間足 動的リバランス実験 [{ticker_mode}銘柄]")
     print("  シナリオ比較: 0bps / 5bps / 15bps")
     print("=" * 60)
 
     # --- データ収集 ---
-    print(f"\n[Step 1] 4hデータ収集 ({ticker_mode}銘柄)...")
+    print(f"\n[Step 1] 4hデータ収集...")
     if args.dynamic:
-        price_df, dynamic_tickers = collect_dynamic_data()
-        print(f"  動的銘柄: {len(dynamic_tickers)} 銘柄")
+        price_df, volume_df = collect_pointintime_data()
     else:
         price_df = collect_4h_data()
     print(f"  価格データ: {price_df.shape[1]} 銘柄 × {price_df.shape[0]} 本")
 
     # --- 前処理 ---
     print("\n[Step 2] データ前処理...")
-    sp_data_list = prepare_all_study_periods(price_df)
+    if args.dynamic:
+        # ポイントインタイム: 各SPの訓練開始時点で出来高フィルタ
+        sp_data_list = []
+        for sp_config in STUDY_PERIODS:
+            sp_id = sp_config["id"]
+            train_start = sp_config["train"][0]
+            liquid = filter_by_volume_at_date(
+                volume_df, train_start, DYNAMIC_TICKER_MIN_VOLUME_USD,
+            )
+            filtered = price_df[[c for c in liquid if c in price_df.columns]]
+            print(f"  SP{sp_id}: {len(filtered.columns)} 銘柄 "
+                  f"(出来高 > ${DYNAMIC_TICKER_MIN_VOLUME_USD/1e6:.0f}M @ {train_start})")
+            sp_data = prepare_study_period(filtered, sp_config)
+            sp_data_list.append(sp_data)
+    else:
+        sp_data_list = prepare_all_study_periods(price_df)
 
     # --- 訓練・予測 (全シナリオで共通) ---
     print("\n[Step 3] 訓練・予測...")
