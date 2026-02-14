@@ -55,17 +55,22 @@ SP3_CONFIG = STUDY_PERIODS[2]  # 最新のStudy Period
 # データ取得 (軽量版: 推論用に直近100本のみ)
 # ============================================================
 
-def fetch_recent_4h(n_candles: int = 100) -> pd.DataFrame:
+def fetch_recent_4h(n_candles: int = 100, tickers: list[str] | None = None) -> pd.DataFrame:
     """Binance APIから各銘柄の直近4hキャンドルを取得.
 
     n_candles > 1000 の場合はページネーションで複数リクエストに分割。
+
+    Args:
+        n_candles: 取得するキャンドル数
+        tickers: Binance形式のティッカーリスト (None=固定リスト BINANCE_TICKERS)
     """
     from data.collector_4h import BINANCE_TICKERS, BINANCE_API_URL, _ticker_to_column
     import requests
 
+    use_tickers = tickers if tickers is not None else BINANCE_TICKERS
     use_pagination = n_candles > 1000
 
-    print(f"  最新4hデータを Binance から取得中{'(大量取得モード)' if use_pagination else ''}...")
+    print(f"  最新4hデータを Binance から取得中 ({len(use_tickers)}銘柄{'、大量取得モード' if use_pagination else ''})...")
     all_data = {}
     failed = []
 
@@ -73,7 +78,7 @@ def fetch_recent_4h(n_candles: int = 100) -> pd.DataFrame:
     now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     start_ms = now_ms - n_candles * 4 * 3600 * 1000 if use_pagination else None
 
-    for i, ticker in enumerate(BINANCE_TICKERS):
+    for i, ticker in enumerate(use_tickers):
         col_name = _ticker_to_column(ticker)
 
         if use_pagination:
@@ -114,7 +119,7 @@ def fetch_recent_4h(n_candles: int = 100) -> pd.DataFrame:
         all_data[col_name] = pd.Series(closes, index=timestamps)
 
         if (i + 1) % 20 == 0:
-            print(f"    {i + 1}/{len(BINANCE_TICKERS)} 銘柄取得完了")
+            print(f"    {i + 1}/{len(use_tickers)} 銘柄取得完了")
         if not use_pagination:
             time.sleep(0.05)
 
@@ -437,10 +442,19 @@ def retrain_models(timeframe: str):
     print(f"  訓練: {sp_config['train'][0]} ~ {sp_config['train'][1]}")
     print(f"  検証: {sp_config['val'][0]} ~ {sp_config['val'][1]}")
 
+    # 動的ティッカー選定 (4h足のみ)
+    dynamic_tickers = None
+    if timeframe == "4h":
+        try:
+            from data.ticker_discovery import get_dynamic_tickers
+            dynamic_tickers = get_dynamic_tickers()
+        except Exception as e:
+            print(f"  動的ティッカー取得失敗 (固定リストで続行): {e}")
+
     # 最新データ取得 (キャッシュ不使用)
     n_candles = (TRAIN_DAYS + VAL_DAYS + SEQUENCE_LENGTH) * 6 + 100
     if timeframe == "4h":
-        price_df = fetch_recent_4h(n_candles=n_candles)
+        price_df = fetch_recent_4h(n_candles=n_candles, tickers=dynamic_tickers)
     else:
         from data.collector import collect_all_data
         price_df = collect_all_data()
@@ -488,6 +502,8 @@ def retrain_models(timeframe: str):
         "train_period": list(sp_config["train"]),
         "val_period": list(sp_config["val"]),
     }
+    if dynamic_tickers is not None:
+        config["tickers_binance"] = dynamic_tickers
     save_ensemble(models, model_path, config)
 
     # メモリ解放
@@ -529,12 +545,15 @@ def main():
     models, config = load_ensemble(model_path)
     train_mean = config["train_mean"]
     train_std = config["train_std"]
+    saved_tickers = config.get("tickers_binance")
     model_info = f"SP{config.get('sp_id', 3)} (units={config['best_units']}, ensemble×{len(models)})"
+    if saved_tickers:
+        print(f"  銘柄リスト: {len(saved_tickers)} 銘柄 (モデル保存時)")
 
     # --- B. 最新データ取得 ---
     print(f"\n[データ取得]")
     if tf == "4h":
-        price_df = fetch_recent_4h()
+        price_df = fetch_recent_4h(tickers=saved_tickers)
     else:
         price_df = fetch_recent_daily()
 

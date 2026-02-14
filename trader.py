@@ -1188,11 +1188,14 @@ def run_once(dry_run: bool, exchange: ccxt.bitget) -> bool:
     models, config = load_ensemble(model_path)
     train_mean = config["train_mean"]
     train_std = config["train_std"]
+    saved_tickers = config.get("tickers_binance")
     log(f"モデル: SP{config.get('sp_id', 3)} (units={config['best_units']}, ensemble×{len(models)})")
+    if saved_tickers:
+        log(f"銘柄リスト: {len(saved_tickers)} 銘柄 (モデル保存時)")
 
     # --- B. 最新データ取得 ---
     log("最新4hデータ取得中...")
-    price_df = fetch_recent_4h()
+    price_df = fetch_recent_4h(tickers=saved_tickers)
 
     # --- C. 特徴量生成 ---
     log("特徴量生成中...")

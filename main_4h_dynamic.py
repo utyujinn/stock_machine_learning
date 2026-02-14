@@ -4,8 +4,13 @@
   A) 0 bps (手数料0) + 動的リバランス
   B) 5 bps (スリッページのみ) + 動的リバランス
   C) 15 bps フルターンオーバー (前回の4h実験、参考)
+
+--dynamic フラグ:
+  Bitget出来高+Binance上場で動的選定した銘柄でバックテスト。
+  固定リストとの比較に使用。
 """
 
+import argparse
 import os
 import sys
 
@@ -21,7 +26,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import PORTFOLIO_K, STUDY_PERIODS, PERIODS_PER_YEAR_4H
+from config import PORTFOLIO_K, STUDY_PERIODS, PERIODS_PER_YEAR_4H, SEQUENCE_LENGTH
 from data.collector_4h import collect_4h_data
 from data.preprocessor import prepare_all_study_periods
 from models.lstm_model import (
@@ -149,15 +154,52 @@ def plot_comparison(scenario_results: dict, output_dir: str):
     print(f"\n比較グラフ保存: {fig_path}")
 
 
+def collect_dynamic_data() -> tuple[pd.DataFrame, list[str]]:
+    """動的ティッカーで4hヒストリカルデータを収集.
+
+    Returns:
+        (price_df, tickers): 価格DataFrame と 使用したティッカーリスト
+    """
+    from data.ticker_discovery import get_dynamic_tickers
+    from advisor import fetch_recent_4h
+
+    print("\n  動的ティッカー選定中...")
+    dynamic_tickers = get_dynamic_tickers()
+
+    # 全Study Periodをカバーするキャンドル数を計算
+    earliest = min(sp["train"][0] for sp in STUDY_PERIODS)
+    from datetime import datetime, timezone
+    earliest_dt = datetime.strptime(earliest, "%Y-%m-%d")
+    now_dt = datetime.now(timezone.utc)
+    days_needed = (now_dt - earliest_dt.replace(tzinfo=timezone.utc)).days + 30 + SEQUENCE_LENGTH
+    n_candles = days_needed * 6 + 100  # 4h足 = 1日6本
+
+    print(f"\n  ヒストリカルデータ取得 ({n_candles} 本 × {len(dynamic_tickers)} 銘柄)...")
+    price_df = fetch_recent_4h(n_candles=n_candles, tickers=dynamic_tickers)
+    return price_df, dynamic_tickers
+
+
 def main():
+    parser = argparse.ArgumentParser(description="4h 動的リバランス実験")
+    parser.add_argument(
+        "--dynamic", action="store_true",
+        help="Bitget出来高+Binance上場で動的選定した銘柄を使用",
+    )
+    args = parser.parse_args()
+
+    ticker_mode = "動的" if args.dynamic else "固定"
     print("=" * 60)
-    print("  4時間足 動的リバランス実験")
+    print(f"  4時間足 動的リバランス実験 [{ticker_mode}銘柄]")
     print("  シナリオ比較: 0bps / 5bps / 15bps")
     print("=" * 60)
 
     # --- データ収集 ---
-    print("\n[Step 1] 4hデータ収集...")
-    price_df = collect_4h_data()
+    print(f"\n[Step 1] 4hデータ収集 ({ticker_mode}銘柄)...")
+    if args.dynamic:
+        price_df, dynamic_tickers = collect_dynamic_data()
+        print(f"  動的銘柄: {len(dynamic_tickers)} 銘柄")
+    else:
+        price_df = collect_4h_data()
     print(f"  価格データ: {price_df.shape[1]} 銘柄 × {price_df.shape[0]} 本")
 
     # --- 前処理 ---
@@ -173,7 +215,7 @@ def main():
 
     # --- シナリオ別バックテスト ---
     print("\n" + "=" * 60)
-    print("  シナリオ別バックテスト")
+    print(f"  シナリオ別バックテスト [{ticker_mode}銘柄]")
     print("=" * 60)
 
     scenario_results = {}
@@ -209,7 +251,7 @@ def main():
 
     # --- 比較サマリー ---
     print("\n" + "=" * 60)
-    print("  シナリオ比較サマリー")
+    print(f"  シナリオ比較サマリー [{ticker_mode}銘柄]")
     print("=" * 60)
     print(f"\n  {'シナリオ':<25s} {'Sharpe':>8s} {'精度':>8s} {'総リターン':>10s} {'最大DD':>8s}")
     print(f"  {'─'*60}")
@@ -221,7 +263,8 @@ def main():
         print(f"  {name:<25s} {m.sharpe_ratio:>8.2f} {acc:>7.1%} {m.total_return:>9.1%} {m.max_drawdown:>7.1%}")
 
     # --- グラフ ---
-    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "output_4h_dynamic")
+    suffix = "_dynamic_tickers" if args.dynamic else ""
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), f"output_4h_dynamic{suffix}")
     plot_comparison(scenario_results, output_dir)
 
     print("\n完了!")
